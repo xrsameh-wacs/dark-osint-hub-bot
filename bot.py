@@ -1,4 +1,4 @@
-import json, os, sys, time, re, socket, ssl, csv, io, uuid, urllib.request, urllib.parse, html, threading, subprocess
+import urllib.error, json, os, sys, time, re, socket, ssl, csv, io, uuid, urllib.request, urllib.parse, html, threading, subprocess
 from lib import *
 from ar import AR, CAT, KIND
 OWNER=int(os.environ.get('OWNER_ID','8200460154'))
@@ -39,6 +39,84 @@ def line(r): return '• %s | %s | %s | %s\n  المصدر: %s | %s\n  id: %s'%(
 def q(c,w,a,n=15): return c.execute('select * from incidents '+w+' order by event_date desc limit ?',a+[n]).fetchall()
 def exists_cmd(c,args):
     return None
+def norm_domain(s):
+    s=(s or '').strip().lower()
+    s=re.sub(r'^[a-z][a-z0-9+.-]*://','',s)
+    s=re.split(r'[/?#\\\s]',s,1)[0]
+    s=s.rsplit('@',1)[-1]
+    s=re.sub(r':\d+$','',s).strip('.')
+    if s.startswith('www.'): s=s[4:]
+    try: s=s.encode('idna').decode()
+    except Exception: return ''
+    return s if re.fullmatch(r'([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}',s) else ''
+def migrate_domains():
+    c=db()
+    for (d,) in c.execute('select domain from authorized_domains').fetchall():
+        n=norm_domain(d)
+        if n!=d:
+            c.execute('delete from authorized_domains where domain=?',(d,))
+            if n: c.execute('insert or ignore into authorized_domains values(?,?)',(n,now()))
+    c.commit(); c.close()
+
+TIPS={
+ 'hsts':('HSTS (Strict-Transport-Security)','يجبر المتصفح على استخدام HTTPS دائما ويمنع هجمات خفض الاتصال.','أضف الترويسة: Strict-Transport-Security: max-age=31536000; includeSubDomains'),
+ 'csp':('Content-Security-Policy','يقيّد مصادر السكربتات والمحتوى ويحد من هجمات XSS.','ابدأ بسياسة بسيطة: Content-Security-Policy: default-src \'self\' (ثم وسّعها حسب مصادر موقعك، وجرّب أولا بوضع Report-Only)'),
+ 'xcto':('X-Content-Type-Options','يمنع المتصفح من تخمين نوع الملف وتنفيذ ملفات مشبوهة.','أضف الترويسة: X-Content-Type-Options: nosniff'),
+ 'xfo':('X-Frame-Options','يمنع عرض موقعك داخل إطار في موقع آخر (هجمات Clickjacking).','أضف الترويسة: X-Frame-Options: SAMEORIGIN (أو استخدم frame-ancestors في CSP)'),
+ 'ref':('Referrer-Policy','يتحكم في كمية معلومات الرابط التي تُرسل للمواقع الأخرى.','أضف الترويسة: Referrer-Policy: strict-origin-when-cross-origin'),
+ 'redir':('تحويل HTTP إلى HTTPS','يضمن أن كل الزوار يصلون عبر اتصال مشفر.','فعّل إعادة توجيه دائمة (301) من http إلى https في الخادم أو لوحة الاستضافة'),
+ 'https':('اتصال HTTPS','الاتصال المشفر أساسي لحماية بيانات الزوار.','فعّل شهادة TLS (مثل Let\'s Encrypt المجانية) من لوحة الاستضافة'),
+}
+class _NoRedir(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,*a,**k): return None
+def _fetch(url,follow=True):
+    op=urllib.request.build_opener() if follow else urllib.request.build_opener(_NoRedir)
+    for meth in ('HEAD','GET'):
+        try:
+            r=op.open(urllib.request.Request(url,method=meth,headers={'User-Agent':UA}),timeout=12); return r.status,r.headers,r.geturl()
+        except urllib.error.HTTPError as e:
+            if e.code in (405,501) and meth=='HEAD': continue
+            return e.code,e.headers,url
+    return None
+def domain_report(d):
+    out=['🔎 فحص سلبي لـ '+d,'(طلبات HEAD/GET عادية على الصفحة الرئيسية فقط، بدون أي اختبار اختراق)','']
+    try: out.append('IPs: '+', '.join(sorted({x[4][0] for x in socket.getaddrinfo(d,443)})))
+    except Exception: out.append('DNS: غير متاح')
+    score=0; miss=[]; rows=[]
+    try: res=_fetch('https://'+d)
+    except Exception: res=None
+    if not res:
+        out.append('HTTPS: غير متاح (تعذر الاتصال)'); miss.append('https'); h={}
+        rows.append('❌ اتصال HTTPS: 0/20')
+    else:
+        st,h,final=res; score+=20; rows.append('✅ اتصال HTTPS (الحالة %s): 20/20'%st)
+        g=lambda k:(h.get(k) or '')
+        m=re.search(r'max-age=(\d+)',g('Strict-Transport-Security'))
+        if m and int(m.group(1))>=15552000: score+=20; rows.append('✅ HSTS: 20/20')
+        elif m: score+=10; rows.append('⚠️ HSTS موجود لكن المدة قصيرة (أقل من 6 أشهر): 10/20'); miss.append('hsts')
+        else: rows.append('❌ HSTS: 0/20'); miss.append('hsts')
+        if g('Content-Security-Policy'): score+=20; rows.append('✅ CSP: 20/20')
+        else: rows.append('❌ CSP: 0/20'); miss.append('csp')
+        if g('X-Content-Type-Options').lower().strip()=='nosniff': score+=10; rows.append('✅ X-Content-Type-Options: 10/10')
+        else: rows.append('❌ X-Content-Type-Options: 0/10'); miss.append('xcto')
+        if g('X-Frame-Options') or 'frame-ancestors' in g('Content-Security-Policy').lower(): score+=10; rows.append('✅ حماية الإطارات: 10/10')
+        else: rows.append('❌ X-Frame-Options: 0/10'); miss.append('xfo')
+        if g('Referrer-Policy'): score+=10; rows.append('✅ Referrer-Policy: 10/10')
+        else: rows.append('❌ Referrer-Policy: 0/10'); miss.append('ref')
+    try:
+        r=_fetch('http://'+d,follow=False)
+        loc=(r[1].get('Location') or '') if r else ''
+        if r and r[0] in (301,302,307,308) and loc.lower().startswith('https://'): score+=10; rows.append('✅ تحويل HTTP إلى HTTPS: 10/10')
+        else: rows.append('❌ تحويل HTTP إلى HTTPS: 0/10'); miss.append('redir')
+    except Exception: rows.append('❔ تحويل HTTP: غير متاح'); 
+    out+=rows; out.append(''); out.append('الدرجة: %d/100 — %s'%(score,'ممتاز' if score>=90 else 'جيد' if score>=70 else 'متوسط' if score>=50 else 'ضعيف'))
+    if miss:
+        out.append(''); out.append('🛠 نصائح الإصلاح:')
+        for k in miss: n,why,fix=TIPS[k]; out.append('• %s\n  لماذا: %s\n  الحل: %s'%(n,why,fix))
+    hb=db().execute("select title,event_date from incidents where kind='data-breach' and detail like ?",('%"domain": "'+d+'"%',)).fetchall()
+    out.append(''); out.append('تسريبات في قائمة HIBP لهذا النطاق: '+('; '.join('%s (%s)'%(x[0],x[1]) for x in hb) or 'لا يوجد في القائمة'))
+    out.append('ملاحظة: الدرجة تقديرية وتغطي ترويسات الأمان فقط، وليست تقييما كاملا للموقع.')
+    return '\n'.join(out)
 def handle(chat,text):
     c=db(); parts=text.strip().split(None,1); cmd=parts[0].split('@')[0].lower(); arg=parts[1].strip() if len(parts)>1 else ''
     if cmd in('/start','/help'): return send(chat,HELP)
@@ -87,27 +165,20 @@ def handle(chat,text):
     if cmd=='/index':
         return send(chat,'الفهرس المركزي:\n\n'+'\n'.join('• %s (%s) — %s — %s سجل'%(i['item'],i['location'],i['description'],i['count']) for i in c.execute('select * from library_index'))+'\n\nأقسام: حوادث الأمن، المؤشرات، كتالوج الأدوات، سجل المصادر.')
     if cmd=='/authdomain':
-        p=arg.split(); 
-        if not p or p[0]=='list': return send(chat,'النطاقات المصرح بها:\n'+('\n'.join(r[0] for r in c.execute('select domain from authorized_domains')) or 'لا يوجد'))
-        if len(p)<2: return send(chat,'الاستخدام: /authdomain add|remove|list نطاق\nمثال: /authdomain add example.com')
-        d=p[1].lower().strip('/')
-        if p[0]=='add': c.execute('insert or replace into authorized_domains values(?,?)',(d,now())); c.commit(); return send(chat,'تمت الإضافة: %s\nبإضافته تؤكد أنك تملكه أو لديك تصريح بفحصه.'%d)
-        if p[0]=='remove': c.execute('delete from authorized_domains where domain=?',(d,)); c.commit(); return send(chat,'تم الحذف: '+d)
-        return send(chat,'الاستخدام: /authdomain add|remove|list نطاق\nمثال: /authdomain add example.com')
+        p=arg.split()
+        USE='الاستخدام: /authdomain add|remove|list نطاق\nمثال: /authdomain add example.com (يقبل أيضا رابطا كاملا)'
+        if not p or p[0].lower()=='list': return send(chat,'النطاقات المصرح بها:\n'+('\n'.join(r[0] for r in c.execute('select domain from authorized_domains order by domain')) or 'لا يوجد'))
+        act=p[0].lower()
+        if act not in('add','remove') or len(p)<2: return send(chat,USE)
+        d=norm_domain(p[1])
+        if not d: return send(chat,'نطاق غير صالح.\n'+USE)
+        if act=='add': c.execute('insert or replace into authorized_domains values(?,?)',(d,now())); c.commit(); return send(chat,'تمت الإضافة: %s\nبإضافته تؤكد أنك تملكه أو لديك تصريح بفحصه.'%d)
+        n=c.execute('delete from authorized_domains where domain=?',(d,)).rowcount; c.commit(); return send(chat,('تم الحذف: '+d) if n else 'النطاق غير موجود في القائمة: '+d)
     if cmd=='/domaincheck':
-        d=arg.lower().replace('https://','').replace('http://','').split('/')[0]
-        if not d: return send(chat,'الاستخدام: /domaincheck نطاق\nمثال: /domaincheck example.com (للنطاقات المصرح بها فقط)')
+        d=norm_domain(arg)
+        if not d: return send(chat,'الاستخدام: /domaincheck نطاق\nمثال: /domaincheck example.com (يقبل أيضا رابطا كاملا؛ للنطاقات المصرح بها فقط)')
         if not c.execute('select 1 from authorized_domains where domain=?',(d,)).fetchone(): return send(chat,'النطاق غير مصرح به. أضفه أولا بـ /authdomain add نطاق إن كنت تملكه أو لديك تصريح. لا أفحص نطاقات غير مصرح بها.')
-        out=['فحص سلبي لـ '+d]
-        try: out.append('IPs: '+', '.join(sorted({x[4][0] for x in socket.getaddrinfo(d,443)})))
-        except Exception as e: out.append('DNS: غير متاح')
-        try:
-            r=urllib.request.urlopen(urllib.request.Request('https://'+d,method='HEAD',headers={'User-Agent':UA}),timeout=12); h=r.headers; out.append('HTTPS: %s'%r.status)
-            for k in ['Strict-Transport-Security','Content-Security-Policy','X-Content-Type-Options','X-Frame-Options','Referrer-Policy']: out.append('%s: %s'%(k,'موجود' if h.get(k) else 'غير موجود'))
-        except Exception as e: out.append('HTTPS: غير متاح (%s)'%type(e).__name__)
-        hb=c.execute("select title,event_date from incidents where kind='data-breach' and detail like ?",('%"domain": "'+d+'"%',)).fetchall()
-        out.append('تسريبات في HIBP لهذا النطاق: '+('; '.join('%s (%s)'%(h[0],h[1]) for h in hb) or 'لا يوجد في القائمة'))
-        return send(chat,'\n'.join(out))
+        return send(chat,domain_report(d))
     if cmd=='/ioc':
         if not arg: return send(chat,'الاستخدام: /ioc قيمة\nمثال: /ioc 1.2.3.4 أو /ioc CVE-2021-44228 أو /ioc نطاق_أو_رابط')
         a=arg.strip(); out=[]
@@ -118,6 +189,7 @@ def handle(chat,text):
         return send(chat,'\n'.join(out) if out else 'لا نتيجة في المصادر المحلية (لا يعني أنه آمن).')
     send(chat,'أمر غير معروف.\n\n'+HELP)
 def main():
+    migrate_domains()
     off=0; print('bot started',flush=True)
     while True:
         try:
@@ -129,22 +201,30 @@ def main():
                 except Exception as e: send(m['chat']['id'],'تعذر تنفيذ الأمر الآن، حاول بعد دقيقة. إن تكرر استخدم /help'); print('handler err',text if False else m['text'].split()[0],type(e).__name__,flush=True)
         except Exception as e: print('poll err',type(e).__name__,flush=True); time.sleep(5)
 SECRET=os.environ.get('WEBHOOK_SECRET','')
+READY=threading.Event()
 def process(u):
+    READY.wait(150)
     m=u.get('message') or {}
     if m.get('from',{}).get('id')!=OWNER or m.get('chat',{}).get('type')!='private': return
     if not m.get('text'): send(m['chat']['id'],'أستقبل أوامر نصية فقط. اكتب /help لعرض الأوامر.'); return
     try: handle(m['chat']['id'],m['text'])
     except Exception as e: send(m['chat']['id'],'تعذر تنفيذ الأمر الآن، حاول بعد دقيقة. إن تكرر استخدم /help'); print('handler err',type(e).__name__,flush=True)
 def bg_refresh():
-    time.sleep(20)
+    import ingest, tools_seed
+    c=db()
+    fresh=c.execute('select count(*) from incidents').fetchone()[0]==0
     try:
-        import ingest; ingest.run(); print('refresh done',flush=True)
+        if fresh:
+            print('first build',ingest.run(['hibp','kev','attack','certfr','feodo','openphish']),flush=True)
+        READY.set()
+        ingest.run(['nvd'] if fresh else None); print('refresh done',flush=True)
     except Exception as e: print('refresh err',type(e).__name__,flush=True)
+    READY.set()
 def serve():
+    pass
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     import shutil
-    if not os.path.exists(DB) and os.path.exists(os.path.join(BASE,'snapshot.db')): shutil.copy(os.path.join(BASE,'snapshot.db'),DB)
-    db().close()
+    migrate_domains()
     class H(BaseHTTPRequestHandler):
         def log_message(self,*a): pass
         def do_GET(self):

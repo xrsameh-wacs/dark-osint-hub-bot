@@ -49,11 +49,12 @@ def tool_card(name):
     return '🔧 %s [%s]\n%s\n%s'%(r['name'],CAT.get(r['category'],r['category']),AR.get(r['name'],'لا يوجد وصف'),r['url'])
 GHM=[('👤 حساب مستخدم','user','اكتب اسم المستخدم على جيت هب (مثال: torvalds)'),('📦 مستودعات مستخدم','repos','اكتب اسم المستخدم (مثال: torvalds)'),('ℹ️ معلومات مستودع','repo','اكتب المستودع بالشكل صاحب/اسم (مثال: torvalds/linux)'),('🕒 آخر التعديلات','commits','اكتب المستودع بالشكل صاحب/اسم'),('🔑 فحص ملفات حساسة','files','اكتب المستودع بالشكل صاحب/اسم (بفحص الأسماء فقط)')]
 PEND={}
-def gh_kb(): return mk(grid([x[0] for x in GHM]+['📧 فحص ظهور إيميلي'])+[[BK_MAIN]])
+def gh_kb(): return mk(grid([x[0] for x in GHM]+['📧 فحص ظهور إيميلي','📂 مستودعاتي','🔎 فحص أسرار مستودعاتي'])+[[BK_MAIN]])
 def gh_route(chat,t):
     t=t.strip()
     if t=='🐙 أدوات جيت هب': send(chat,'🐙 أدوات جيت هب (بيانات عامة فقط عبر الـ API الرسمي، بدون تسجيل دخول). اختار أداة:',gh_kb()); return True
     if t=='📧 فحص ظهور إيميلي': PEND.pop(chat,None); send(chat,gh_run('myemail','')); return True
+    if t in('📂 مستودعاتي','🔎 فحص أسرار مستودعاتي'): PEND.pop(chat,None); (send(chat,'⏳ لحظة...') if 'أسرار' in t else None); send(chat,gh_run('secrets' if 'أسرار' in t else 'mine','')); return True
     for lab,cmd,hint in GHM:
         if t==lab: PEND[chat]=cmd; send(chat,hint+'\nأو اضغط 🔙 للرجوع.'); return True
     if t in(BK_MAIN,BK_CAT): PEND.pop(chat,None); return False

@@ -149,7 +149,7 @@ HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مص
 /domaincheck نطاق — فحص سلبي (DNS وترويسات HTTPS) للنطاقات المصرح بها فقط
 /authdomain add|remove|list نطاق — إدارة النطاقات التي تملك تصريحا بفحصها
 /ioc قيمة — بحث عن مؤشر (IP أو رابط أو نطاق أو CVE)
-/verifydomain دومين — إثبات ملكية دومين (TXT)\n/scan أداة دومين — فحص نشط خفيف عبر GitHub Actions (لدومين مثبت فقط)\n/selftest — اختبار كل الأدوات على عينات آمنة (نجح/فشل)
+/verifydomain دومين — إثبات ملكية دومين (TXT)\n/scan أداة دومين — فحص نشط خفيف عبر GitHub Actions (لدومين مثبت فقط)\n/approve دومين — اعتماد هدف (إقرار ملكية/تصريح)\n/revoke دومين — سحب الاعتماد\n/targets — الأهداف المعتمدة\n/auditlog — سجل الاعتمادات والعمليات\n/selftest — اختبار كل الأدوات على عينات آمنة (نجح/فشل)
 /inventory — جرد الأدوات: جوه البوت، تحتاج سيرفر، روابط
 /reports — التقارير المحفوظة لكل فحص (/reports رقم، /reports export)
 
@@ -324,10 +324,14 @@ def handle(chat,text):
         a=arg.lower().split()
         if len(a)!=2 or a[0] not in an.SCAN_TOOLS or not re.fullmatch(r'([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}',a[1]):
             return send(chat,'الاستخدام: /scan أداة دومين\nالأدوات:\n'+'\n'.join('• %s: %s'%(k,v) for k,v in an.SCAN_TOOLS.items())+'\nلازم الدومين يكون مثبت ملكيته بـ /verifydomain. الفحص بيتنفذ على GitHub Actions والنتيجة بتيجيلك هنا.')
-        r=an.txt_ok(a[1])
-        if r is None: return send(chat,'تعذر قراءة DNS دلوقتي، جرب بعد شوية.')
-        if not r: return send(chat,'🚫 الدومين ده مش مثبت ملكيته. استخدم /verifydomain %s الأول. مفيش فحص من غير إثبات.'%a[1])
-        e=an.dispatch(a[0],a[1])
+        c=db(); appr=c.execute('select 1 from authorized_domains where domain=?',(a[1],)).fetchone()
+        if not appr:
+            r=an.txt_ok(a[1])
+            if not r:
+                an.audit(c,'scan_blocked',a[1],'tool=%s not approved'%a[0])
+                return send(chat,'🚫 الدومين ده مش معتمد. اعتمده الأول بـ /approve %s (إقرار ملكية/تصريح) أو أثبته بـ /verifydomain. مفيش فحص من غير كده.'%a[1])
+            an.audit(c,'scan_dns_proof',a[1],'tool=%s via TXT'%a[0])
+        e=an.dispatch(a[0],a[1]); an.audit(db(),'scan_dispatch' if not e else 'scan_dispatch_failed',a[1],'tool=%s %s'%(a[0],e or 'ok'))
         return send(chat,e if e else '🚀 بدأ فحص %s على %s على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق.'%(a[0],a[1]))
     if cmd=='/selftest':
         send(chat,'⏳ بختبر الأدوات على عينات آمنة، دقيقة تقريبا...'); import an,imgx,gh as _gh
@@ -391,6 +395,30 @@ def handle(chat,text):
         return send(chat,'\n\n'.join('🔧 %s [%s]\n%s\n%s'%(t['name'],CAT.get(t['category'],t['category']),AR.get(t['name'],t['description']),t['url']) for t in rows))
     if cmd=='/index':
         return send(chat,'الفهرس المركزي:\n\n'+'\n'.join('• %s (%s) — %s — %s سجل'%(i['item'],i['location'],i['description'],i['count']) for i in c.execute('select * from library_index'))+'\n\nأقسام: حوادث الأمن، المؤشرات، كتالوج الأدوات، سجل المصادر.')
+    if cmd in('/approve','/revoke','/targets','/auditlog'):
+        import an; c=db(); p=arg.split()
+        if cmd=='/targets':
+            rows=c.execute('select domain,added_at from authorized_domains order by domain').fetchall()
+            return send(chat,'🎯 الأهداف المعتمدة:\n'+('\n'.join('• %s (من %s)'%(r[0],r[1][:16]) for r in rows) or 'لا يوجد')+'\n\nاعتماد: /approve دومين | سحب: /revoke دومين | السجل: /auditlog')
+        if cmd=='/auditlog':
+            c.execute('create table if not exists audit(id integer primary key autoincrement, ts text, event text, domain text, detail text)')
+            rows=[dict(r) for r in c.execute('select * from audit order by id')]
+            if p and p[0]=='export':
+                if not rows: return send(chat,'السجل فاضي.')
+                call('sendDocument',{'chat_id':chat,'caption':'سجل المراجعة (%d)'%len(rows)},{'document':('audit.json',json.dumps(rows,ensure_ascii=False,indent=1).encode())}); return
+            return send(chat,'📜 آخر العمليات:\n'+('\n'.join('%s | %s | %s | %s'%(r['ts'][:16],r['event'],r['domain'],r['detail'][:60]) for r in rows[-20:]) or 'لسه مفيش عمليات')+'\n\nللتنزيل الكامل: /auditlog export (التخزين على الخطة المجانية مؤقت)')
+        d=norm_domain(p[0]) if p else None
+        if not d or not re.fullmatch(an.DOM_RE,d): return send(chat,'الاستخدام: %s دومين\nمثال: %s example.com (IP مرفوض)'%(cmd,cmd))
+        if cmd=='/revoke':
+            n=c.execute('delete from authorized_domains where domain=?',(d,)).rowcount; c.commit(); an.audit(c,'revoke',d,'removed' if n else 'not in list')
+            return send(chat,('🛑 اتسحب الاعتماد من %s. أي فحص عليه هيتمنع.'%d) if n else 'الدومين ده مش في القائمة.')
+        giant=an.is_giant(d); ok=len(p)>1 and p[1] in('أقر','اقر')
+        if giant and not(ok and len(p)>2 and p[2] in('تصريح-كتابي','written')):
+            an.audit(c,'approve_refused',d,'major third-party domain without written-permission flag')
+            return send(chat,'⛔ %s دومين لجهة كبيرة/حكومية. مرفوض إلا لو عندك تصريح كتابي: /approve %s أقر تصريح-كتابي'%(d,d))
+        if not ok: return send(chat,'📝 إقرار قبل الاعتماد لـ %s:\n«%s»\nلو ده صحيح اكتب: /approve %s أقر\nهيتسجل الإقرار بالوقت في السجل.'%(d,an.ATTEST,d))
+        c.execute('insert or replace into authorized_domains values(?,?)',(d,now())); c.commit(); an.audit(c,'approve',d,'manual attestation by admin chat %s: %s%s'%(chat,an.ATTEST,' [written permission flagged]' if giant else ''))
+        return send(chat,'✅ اتعتمد %s. الأدوات تقدر تشتغل عليه (فحص خفيف بس). /revoke %s يسحب الاعتماد.'%(d,d))
     if cmd=='/authdomain':
         p=arg.split()
         USE='الاستخدام: /authdomain add|remove|list نطاق\nمثال: /authdomain add example.com (يقبل أيضا رابطا كاملا)'
@@ -399,7 +427,7 @@ def handle(chat,text):
         if act not in('add','remove') or len(p)<2: return send(chat,USE)
         d=norm_domain(p[1])
         if not d: return send(chat,'نطاق غير صالح.\n'+USE)
-        if act=='add': c.execute('insert or replace into authorized_domains values(?,?)',(d,now())); c.commit(); return send(chat,'تمت الإضافة: %s\nبإضافته تؤكد أنك تملكه أو لديك تصريح بفحصه.'%d)
+        if act=='add': return handle(chat,'/approve '+d)
         n=c.execute('delete from authorized_domains where domain=?',(d,)).rowcount; c.commit(); return send(chat,('تم الحذف: '+d) if n else 'النطاق غير موجود في القائمة: '+d)
     if cmd=='/domaincheck':
         d=norm_domain(arg)

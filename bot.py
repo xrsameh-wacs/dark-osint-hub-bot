@@ -21,7 +21,7 @@ def send(chat,text,markup=None):
         d={'chat_id':chat,'text':text[i:i+3900],'disable_web_page_preview':'true'}
         if markup and i+3900>=len(text): d['reply_markup']=json.dumps(markup)
         call('sendMessage',d)
-KBROWS=[['🚨 آخر الحوادث','🖼 أدوات الصور'],['🧰 كل الأدوات','📚 الفهرس'],['🌐 افحص دومين','📷 افحص صورة'],['🤖 اسأل المساعد','🔎 دوّر على حاجة'],['📡 المصادر','💾 نزّل الداتا'],['🔄 حدّث البيانات','❓ مساعدة']]
+KBROWS=[['🚨 آخر الحوادث','🖼 أدوات الصور'],['🧰 كل الأدوات','📚 الفهرس'],['🌐 افحص دومين','📷 افحص صورة'],['🤖 اسأل المساعد','🔎 دوّر على حاجة'],['📡 المصادر','💾 نزّل الداتا'],['🔄 حدّث البيانات','❓ مساعدة'],['🐙 أدوات جيت هب']]
 KB={'keyboard':[[{'text':t} for t in r] for r in KBROWS],'resize_keyboard':True,'is_persistent':False,'one_time_keyboard':False,'input_field_placeholder':'اختار قسم أو اكتب سؤالك'}
 def kb_action(chat,t):
     t=t.strip()
@@ -47,7 +47,26 @@ def tool_card(name):
     c=db(); r=c.execute('select name,category,url from tools where name=?',(name,)).fetchone()
     if not r: return None
     return '🔧 %s [%s]\n%s\n%s'%(r['name'],CAT.get(r['category'],r['category']),AR.get(r['name'],'لا يوجد وصف'),r['url'])
+GHM=[('👤 حساب مستخدم','user','اكتب اسم المستخدم على جيت هب (مثال: torvalds)'),('📦 مستودعات مستخدم','repos','اكتب اسم المستخدم (مثال: torvalds)'),('ℹ️ معلومات مستودع','repo','اكتب المستودع بالشكل صاحب/اسم (مثال: torvalds/linux)'),('🕒 آخر التعديلات','commits','اكتب المستودع بالشكل صاحب/اسم'),('🔑 فحص ملفات حساسة','files','اكتب المستودع بالشكل صاحب/اسم (بفحص الأسماء فقط)')]
+PEND={}
+def gh_kb(): return mk(grid([x[0] for x in GHM]+['📧 فحص ظهور إيميلي'])+[[BK_MAIN]])
+def gh_route(chat,t):
+    t=t.strip()
+    if t=='🐙 أدوات جيت هب': send(chat,'🐙 أدوات جيت هب (بيانات عامة فقط عبر الـ API الرسمي، بدون تسجيل دخول). اختار أداة:',gh_kb()); return True
+    if t=='📧 فحص ظهور إيميلي': PEND.pop(chat,None); send(chat,gh_run('myemail','')); return True
+    for lab,cmd,hint in GHM:
+        if t==lab: PEND[chat]=cmd; send(chat,hint+'\nأو اضغط 🔙 للرجوع.'); return True
+    if t in(BK_MAIN,BK_CAT): PEND.pop(chat,None); return False
+    if chat in PEND and not t.startswith('/') and t not in sum(KBROWS,[]):
+        cmd=PEND.pop(chat); send(chat,gh_run(cmd,t)); return True
+    return False
+def gh_run(cmd,arg):
+    import gh
+    try: return gh.run(cmd,arg) or 'أمر غير معروف.'
+    except (LookupError,RuntimeError) as e: return str(e)
+    except Exception as e: print('gh err',type(e).__name__,flush=True); return 'حصلت مشكلة، جرب تاني بعد شوية.'
 def kb_route(chat,t):
+    if gh_route(chat,t): return True
     t=t.strip()
     if t==BK_MAIN: send(chat,'⌨️ القائمة الرئيسية، اختار قسم.',KB); return True
     if t==BK_CAT: send(chat,'📂 اختار فئة الأدوات:',cats_kb()); return True
@@ -245,6 +264,7 @@ def handle(chat,text):
         r=kb_action(chat,text)
         return r if r is not None or text.strip() in sum(KBROWS,[]) else ask_ai(chat,text)
     if cmd in('/start','/help'): return send(chat,HELP+'\n/imgcheck — فحص صورة (EXIF وروابط بحث عكسي)\n/ask سؤال — المساعد الذكي يرشّح لك الأداة المناسبة (أو اكتب سؤالك مباشرة)\n/menu — فئات الأدوات بأزرار\n\nالأزرار اللي تحت بتفتحلك كل قسم.',KB)
+    if cmd=='/gh': return send(chat,gh_run((arg.split() or [''])[0],' '.join(arg.split()[1:])) if arg.strip() else 'الاستخدام: /gh user|repos|repo|commits|files الاسم  أو  /gh myemail')
     if cmd in('/buttons','/keyboard'): return send(chat,'⌨️ الأزرار رجعت تحت. اضغط على أي قسم.',KB)
     if cmd=='/menu': return send(chat,'🔧 اختر قسما:',menu())
     if cmd=='/imgcheck': return send(chat,IMG_USAGE)

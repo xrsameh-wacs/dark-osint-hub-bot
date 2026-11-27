@@ -21,7 +21,7 @@ def send(chat,text,markup=None):
         d={'chat_id':chat,'text':text[i:i+3900],'disable_web_page_preview':'true'}
         if markup and i+3900>=len(text): d['reply_markup']=json.dumps(markup)
         call('sendMessage',d)
-KBROWS=[['🚨 آخر الحوادث','🖼 أدوات الصور'],['🧰 كل الأدوات','📚 الفهرس'],['🌐 افحص دومين','📷 افحص صورة'],['🤖 اسأل المساعد','🔎 دوّر على حاجة'],['📡 المصادر','💾 نزّل الداتا'],['🔄 حدّث البيانات','❓ مساعدة'],['🐙 أدوات جيت هب']]
+KBROWS=[['🚨 آخر الحوادث','🖼 أدوات الصور'],['🧰 كل الأدوات','📚 الفهرس'],['🌐 افحص دومين','📷 افحص صورة'],['🤖 اسأل المساعد','🔎 دوّر على حاجة'],['📡 المصادر','💾 نزّل الداتا'],['🔄 حدّث البيانات','❓ مساعدة'],['🐙 أدوات جيت هب','🧪 اختبار الأدوات'],['📋 جرد الأدوات','🗂 تقاريري']]
 KB={'keyboard':[[{'text':t} for t in r] for r in KBROWS],'resize_keyboard':True,'is_persistent':False,'one_time_keyboard':False,'input_field_placeholder':'اختار قسم أو اكتب سؤالك'}
 def kb_action(chat,t):
     t=t.strip()
@@ -35,6 +35,9 @@ def kb_action(chat,t):
     if t=='💾 نزّل الداتا': return handle(chat,'/export csv')
     if t=='🔄 حدّث البيانات': return handle(chat,'/updates')
     if t=='❓ مساعدة': return handle(chat,'/help')
+    if t=='🧪 اختبار الأدوات': return handle(chat,'/selftest')
+    if t=='📋 جرد الأدوات': return handle(chat,'/inventory')
+    if t=='🗂 تقاريري': return handle(chat,'/reports')
     return None
 BK_MAIN='🔙 القائمة الرئيسية'; BK_CAT='🔙 الفئات'
 def mk(rows): return {'keyboard':[[{'text':t} for t in r] for r in rows],'resize_keyboard':True,'is_persistent':False,'one_time_keyboard':False,'input_field_placeholder':'اختار من القايمة'}
@@ -67,9 +70,16 @@ def gh_run(cmd,arg):
     try: return gh.run(cmd,arg) or 'أمر غير معروف.'
     except (LookupError,RuntimeError) as e: return str(e)
     except Exception as e: print('gh err',type(e).__name__,flush=True); return 'حصلت مشكلة، جرب تاني بعد شوية.'
+def save_rep(tool,target,text):
+    c=db(); c.execute('create table if not exists reports(id integer primary key autoincrement, ts text, tool text, target text, summary text)')
+    c.execute('insert into reports(ts,tool,target,summary) values(?,?,?,?)',(now(),tool,(target or '')[:120],text)); c.commit()
+def send_rep(chat,tool,target,text):
+    try: save_rep(tool,target,text)
+    except Exception as e: print('rep err',type(e).__name__,flush=True)
+    return send(chat,text)
 def an_text(chat,t):
     import an
-    nm=AN.pop(chat); k=an.TXT.get(nm,('file',))[0]; t=t.strip()
+    nm=AN.pop(chat); k=an.TXT.get(nm,('file',))[0]; t=t.strip(); send=lambda c,x,_n=nm,_t=t: send_rep(c,_n,_t if k!='pwned' else 'hidden',x)
     if k=='ioc': return handle(chat,'/ioc '+t)
     if k=='dom': return handle(chat,'/domaincheck '+t)
     if k=='pwned': return send(chat,an.pwned(t))
@@ -139,6 +149,9 @@ HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مص
 /domaincheck نطاق — فحص سلبي (DNS وترويسات HTTPS) للنطاقات المصرح بها فقط
 /authdomain add|remove|list نطاق — إدارة النطاقات التي تملك تصريحا بفحصها
 /ioc قيمة — بحث عن مؤشر (IP أو رابط أو نطاق أو CVE)
+/selftest — اختبار كل الأدوات على عينات آمنة (نجح/فشل)
+/inventory — جرد الأدوات: جوه البوت، تحتاج سيرفر، روابط
+/reports — التقارير المحفوظة لكل فحص (/reports رقم، /reports export)
 
 كل السجلات: مصدر وتاريخ، وأي معلومة ناقصة تظهر "غير متاح".'''
 def A(x): return 'غير متاح' if x in (None,'unavailable','') else str(x)
@@ -298,6 +311,22 @@ def handle(chat,text):
     if cmd in('/start','/help'): return send(chat,HELP+'\n/imgcheck — فحص صورة (EXIF وروابط بحث عكسي)\n/ask سؤال — المساعد الذكي يرشّح لك الأداة المناسبة (أو اكتب سؤالك مباشرة)\n/menu — فئات الأدوات بأزرار\n\nالأزرار اللي تحت بتفتحلك كل قسم.',KB)
     if cmd=='/gh': return send(chat,gh_run((arg.split() or [''])[0],' '.join(arg.split()[1:])) if arg.strip() else 'الاستخدام: /gh user|repos|repo|commits|files الاسم  أو  /gh myemail')
     if cmd in('/buttons','/keyboard'): return send(chat,'⌨️ الأزرار رجعت تحت. اضغط على أي قسم.',KB)
+    if cmd=='/selftest':
+        send(chat,'⏳ بختبر الأدوات على عينات آمنة، دقيقة تقريبا...'); import an,imgx,gh as _gh
+        return send_rep(chat,'selftest','builtin',an.selftest(db,imgx,_gh))
+    if cmd=='/inventory':
+        import an; return send(chat,an.inventory([(r['name'],r['category']) for r in db().execute('select name,category from tools order by name')]))
+    if cmd=='/reports':
+        c=db(); c.execute('create table if not exists reports(id integer primary key autoincrement, ts text, tool text, target text, summary text)')
+        if arg.isdigit():
+            r=c.execute('select * from reports where id=?',(int(arg),)).fetchone()
+            return send(chat,('تقرير #%d | %s | %s | %s\n\n%s'%(r['id'],r['ts'],r['tool'],r['target'],r['summary'])) if r else 'مفيش تقرير بالرقم ده.')
+        if arg=='export':
+            rows=[dict(r) for r in c.execute('select * from reports order by id')]
+            if not rows: return send(chat,'لسه مفيش تقارير محفوظة.')
+            data=json.dumps(rows,ensure_ascii=False,indent=1).encode(); call('sendDocument',{'chat_id':chat,'caption':'كل التقارير المحفوظة (%d)'%len(rows)},{'document':('reports.json',data)}); return
+        rows=c.execute('select id,ts,tool,target from reports order by id desc limit 15').fetchall()
+        return send(chat,('🗂 آخر التقارير المحفوظة (اكتب /reports رقم لعرض تقرير، أو /reports export لتنزيلها كلها):\n'+'\n'.join('#%d | %s | %s | %s'%(r['id'],r['ts'][:16],r['tool'],r['target']) for r in rows)+'\n\nملحوظة: التخزين على الخطة المجانية مؤقت وممكن يتمسح مع إعادة التشغيل، نزّلها بـ /reports export.') if rows else 'لسه مفيش تقارير. أي فحص بتعمله بيتحفظ هنا.')
     if cmd=='/menu': return send(chat,'🔧 اختر قسما:',menu())
     if cmd=='/imgcheck': return send(chat,IMG_USAGE)
     if cmd=='/incidents':
@@ -358,7 +387,7 @@ def handle(chat,text):
         d=norm_domain(arg)
         if not d: return send(chat,'الاستخدام: /domaincheck نطاق\nمثال: /domaincheck example.com (يقبل أيضا رابطا كاملا؛ للنطاقات المصرح بها فقط)')
         if not c.execute('select 1 from authorized_domains where domain=?',(d,)).fetchone(): return send(chat,'النطاق غير مصرح به. أضفه أولا بـ /authdomain add نطاق إن كنت تملكه أو لديك تصريح. لا أفحص نطاقات غير مصرح بها.')
-        return send(chat,domain_report(d))
+        return send_rep(chat,'domaincheck',d,domain_report(d))
     if cmd=='/ioc':
         if not arg: return send(chat,'الاستخدام: /ioc قيمة\nمثال: /ioc 1.2.3.4 أو /ioc CVE-2021-44228 أو /ioc نطاق_أو_رابط')
         a=arg.strip(); out=[]
@@ -409,7 +438,7 @@ def process(u):
             data=urllib.request.urlopen('https://api.telegram.org/file/bot'+TOKEN+'/'+fi['file_path'],timeout=90).read()
             import imgx
             if imgx.kind(data): AN.pop(cid,None); return img_check(cid,m,data,'image/jpeg',True)
-            fn=AN.pop(cid,'Ghidra'); send(cid,an.RUN.get(fn,an.RUN['Ghidra'])[0](data,d0.get('file_name','')))
+            fn=AN.pop(cid,'Ghidra'); send_rep(cid,fn,d0.get('file_name',''),an.RUN.get(fn,an.RUN['Ghidra'])[0](data,d0.get('file_name','')))
         except Exception as e: send(cid,'تعذر تحليل الملف الآن، حاول مرة أخرى.'); print('an err',type(e).__name__,flush=True)
         return
     if not m.get('text'): send(m['chat']['id'],'أستقبل أوامر نصية وصورا فقط. اكتب /help لعرض الأوامر.'); return

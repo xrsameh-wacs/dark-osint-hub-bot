@@ -21,7 +21,7 @@ def send(chat,text,markup=None):
         d={'chat_id':chat,'text':text[i:i+3900],'disable_web_page_preview':'true'}
         if markup and i+3900>=len(text): d['reply_markup']=json.dumps(markup)
         call('sendMessage',d)
-BACK=[[{'text':'⬅️ القائمة الرئيسية','callback_data':'m:menu'}]]
+BACK={'inline_keyboard':[[{'text':'⬅️ القائمة الرئيسية','callback_data':'m:menu'}]]}
 def menu():
     rows=[[{'text':'📰 آخر الحوادث','callback_data':'m:inc'},{'text':'🖼 فحص الصور والتحقق','callback_data':'c:image-verification'}],
           [{'text':'📚 الفهرس','callback_data':'m:index'},{'text':'📡 المصادر','callback_data':'m:src'}],

@@ -226,16 +226,19 @@ def domain_report(d):
     return '\n'.join(out)
 IMG_USAGE='📷 /imgcheck — فحص صورة\n1) أرسل الصورة كملف (📎 ثم ملف/File) مع التعليق /imgcheck لأقرأ بيانات EXIF بالكامل (تيليجرام يحذفها من الصور العادية).\n2) أرفق روابط البحث العكسي الجاهزة: Google Lens وYandex وBing وTinEye (ارفع الصورة في الموقع).\nلا يوجد أي تعرف على الوجوه أو تحديد هوية أشخاص.'
 SEARCH_LINKS='🔎 روابط البحث العكسي (افتح الموقع وارفع الصورة):\n• Google Lens: https://lens.google.com\n• Yandex: https://yandex.com/images/\n• Bing: https://www.bing.com/visualsearch\n• TinEye: https://tineye.com\n• InVID-WeVerify: https://www.invid-project.eu/tools-and-services/invid-verification-plugin/'
-def img_check(chat,m):
+def img_check(chat,m,data=None,mime='image/jpeg',isdoc=True):
     import imgx
-    doc=m.get('document'); out='📷 نتيجة فحص الصورة\n'
-    fid=None; mime='image/jpeg'; isdoc=False
-    if doc and (doc.get('mime_type') or '').startswith('image/') and (doc.get('file_size') or 0)<=15000000:
-        fid=doc['file_id']; mime=doc['mime_type']; isdoc=True
-    elif m.get('photo'): fid=m['photo'][-1]['file_id']
-    if not fid: return send(chat,'أرسل صورة (يفضل كملف).')
-    fi=call('getFile',{'file_id':fid})['result']
-    data=urllib.request.urlopen('https://api.telegram.org/file/bot'+TOKEN+'/'+fi['file_path'],timeout=60).read()
+    out='📷 نتيجة فحص الصورة\n'
+    if data is None:
+        doc=m.get('document'); fid=None; isdoc=False
+        if doc and (doc.get('mime_type') or '').startswith('image/') and (doc.get('file_size') or 0)<=15000000:
+            fid=doc['file_id']; mime=doc['mime_type']; isdoc=True
+        elif m.get('photo'): fid=m['photo'][-1]['file_id']
+        if not fid: return send(chat,'أرسل صورة (يفضل كملف).')
+        fi=call('getFile',{'file_id':fid})['result']
+        data=urllib.request.urlopen('https://api.telegram.org/file/bot'+TOKEN+'/'+fi['file_path'],timeout=60).read()
+    kd=imgx.kind(data)
+    if kd=='heic': out+='صيغة HEIC (صور الآيفون).\n'
     if isdoc:
         ex=imgx.exif(data)
         out+='\n📋 بيانات EXIF:\n'
@@ -249,7 +252,10 @@ def img_check(chat,m):
     key=os.environ.get('GROQ_API_KEY','').strip()
     if key:
         try:
-            v=imgx.vision(data,key,mime)
+            vd,vm=(data,mime)
+            if kd!='jpeg' and kd!='png':
+                j=imgx.to_jpeg(data); vd,vm=(j,'image/jpeg') if j else (None,mime)
+            v=imgx.vision(vd,key,vm) if vd else 'الوصف الذكي مش متاح لصيغة الملف دي حاليا. ابعتها كـ JPEG أو PNG.'
             send(chat,'🧠 وصف الصورة وقراءة النص (ذكاء اصطناعي، تقدير وقد يخطئ):\n\n'+v if v else 'الصورة كبيرة على الوصف الذكي (أكبر من حوالي 2.8 ميجا). صغّرها وأعد الإرسال.')
         except urllib.error.HTTPError as e: print('vis http',e.code,flush=True); send(chat,'الوصف الذكي وصل لحد الاستخدام المجاني مؤقتا، حاول بعد دقيقة.' if e.code==429 else 'تعذر الوصف الذكي الآن.')
         except Exception as e: print('vis err',type(e).__name__,flush=True); send(chat,'تعذر الوصف الذكي الآن.')
@@ -401,6 +407,8 @@ def process(u):
         try:
             fi=call('getFile',{'file_id':d0['file_id']})['result']
             data=urllib.request.urlopen('https://api.telegram.org/file/bot'+TOKEN+'/'+fi['file_path'],timeout=90).read()
+            import imgx
+            if imgx.kind(data): AN.pop(cid,None); return img_check(cid,m,data,'image/jpeg',True)
             fn=AN.pop(cid,'Ghidra'); send(cid,an.RUN.get(fn,an.RUN['Ghidra'])[0](data,d0.get('file_name','')))
         except Exception as e: send(cid,'تعذر تحليل الملف الآن، حاول مرة أخرى.'); print('an err',type(e).__name__,flush=True)
         return

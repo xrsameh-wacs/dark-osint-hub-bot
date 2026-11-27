@@ -220,3 +220,98 @@ TXT={'Have I Been Pwned':('pwned','ابعتلي الباسورد (أو SHA-1 ب�
  'Semgrep':('sec','ابعت نص أو ملف كود وأفحصه عن مفاتيح وأسرار مكشوفة (بعرض النوع والسطر بس).')}
 RUN['YARA']=(analyze,'ابعتلي الملف كملف (📎 File، حتى 20 ميجا). هفحصه ساكن بأنماط مشبوهة (زي قواعد YARA) من غير تشغيله.')
 RUN['TruffleHog']=(secrets,TXT['TruffleHog'][1]); RUN['Semgrep']=(secrets,TXT['Semgrep'][1])
+import collections,socket as _s
+def pcap(d,fname=''):
+    if len(d)<24: return 'الملف مش PCAP صالح. ابعت ملف تسجيل شبكة بصيغة .pcap أو .pcapng.'
+    pk=[]
+    m=d[:4]
+    if m in(b'\xd4\xc3\xb2\xa1',b'\xa1\xb2\xc3\xd4',b'\x4d\x3c\xb2\xa1',b'\xa1\xb2\x3c\x4d'):
+        e='<' if m in(b'\xd4\xc3\xb2\xa1',b'\x4d\x3c\xb2\xa1') else '>'; nano=m in(b'\x4d\x3c\xb2\xa1',b'\xa1\xb2\x3c\x4d')
+        lt=struct.unpack_from(e+'I',d,20)[0]; o=24
+        while o+16<=len(d) and len(pk)<200000:
+            s,us,cl,ol=struct.unpack_from(e+'IIII',d,o); o+=16
+            pk.append((s+us/(1e9 if nano else 1e6),d[o:o+cl],lt)); o+=cl
+    elif m==b'\x0a\x0d\x0d\x0a':
+        o=0; lts=[]
+        while o+12<=len(d) and len(pk)<200000:
+            bt,bl=struct.unpack_from('<II',d,o)
+            if bl<12: break
+            if bt==1: lts.append(struct.unpack_from('<H',d,o+8)[0])
+            if bt==6:
+                ifid,th,tl,cl,ol=struct.unpack_from('<IIIII',d,o+8)
+                pk.append(((th<<32|tl)/1e6,d[o+28:o+28+cl],lts[ifid] if ifid<len(lts) else 1))
+            o+=bl
+    else: return 'الملف مش PCAP صالح. ابعت ملف تسجيل شبكة بصيغة .pcap أو .pcapng.'
+    if not pk: return 'مفيش حزم داخل الملف.'
+    proto=collections.Counter(); src=collections.Counter(); dst=collections.Counter(); ports=collections.Counter(); dns=collections.Counter(); clear=set()
+    for ts,b,lt in pk:
+        try:
+            if lt==1: et=struct.unpack('>H',b[12:14])[0]; b=b[14:]
+            elif lt==101 or lt==12: et=0x800
+            else: continue
+            if et==0x8100: et=struct.unpack('>H',b[2:4])[0]; b=b[4:]
+            if et==0x806: proto['ARP']+=1; continue
+            if et==0x86dd: proto['IPv6']+=1; continue
+            if et!=0x800: proto['أخرى']+=1; continue
+            ihl=(b[0]&15)*4; p=b[9]; a=_s.inet_ntoa(b[12:16]); c=_s.inet_ntoa(b[16:20]); src[a]+=1; dst[c]+=1; t=b[ihl:]
+            if p==6 and len(t)>=4:
+                sp,dp=struct.unpack('>HH',t[:4]); proto['TCP']+=1; ports[dp]+=1
+                if dp in(21,23,80,110,143,25,69): clear.add(dp)
+            elif p==17 and len(t)>=8:
+                sp,dp=struct.unpack('>HH',t[:4]); proto['UDP']+=1; ports[dp]+=1
+                if dp==53 or sp==53:
+                    q=t[8+12:]; n=[];i=0
+                    while i<len(q) and q[i] and len(n)<10: n.append(q[i+1:i+1+q[i]].decode('latin1')); i+=1+q[i]
+                    if n and dp==53: dns['.'.join(n)]+=1
+            elif p==1: proto['ICMP']+=1
+            else: proto['IP-%d'%p]+=1
+        except Exception: continue
+    dur=pk[-1][0]-pk[0][0]
+    BAD={4444:'غالبا Metasploit/باب خلفي',1337:'منفذ شائع في الأدوات الخبيثة',31337:'منفذ باب خلفي قديم',6667:'IRC (قنوات تحكم قديمة)',3389:'RDP',5900:'VNC',23:'Telnet بدون تشفير',21:'FTP بدون تشفير'}
+    L=['📡 ملخص تسجيل الشبكة (زي Wireshark/Zeek/Suricata خفيف)','الاسم: %s | الحزم: %d | المدة: %.1f ثانية'%(fname or 'غير متاح',len(pk),dur),'البروتوكولات: '+' ، '.join('%s %d'%x for x in proto.most_common(6)),'أكثر المصادر: '+' ، '.join('%s (%d)'%x for x in src.most_common(5)),'أكثر الوجهات: '+' ، '.join('%s (%d)'%x for x in dst.most_common(5)),'أكثر البورتات: '+' ، '.join('%d (%d)'%x for x in ports.most_common(8))]
+    if dns: L.append('استعلامات DNS (%d مختلف): '%len(dns)+' ، '.join(k for k,_ in dns.most_common(15)))
+    sus=[('⚠️ بورت %d: %s'%(p,BAD[p])) for p in ports if p in BAD]
+    if clear: L.append('⚠️ بروتوكولات بدون تشفير: '+' ، '.join(str(x) for x in sorted(clear)))
+    L+=sus[:6]
+    L.append('\nالخلاصة: '+('🟡 فيه نقاط تستحق المراجعة (بورتات أو بروتوكولات مكشوفة)' if sus or clear else '🟢 مفيش بورتات أو بروتوكولات مريبة واضحة')+'\nده ملخص مبسط، مفيش تفكيك كامل للجلسات ولا قواعد Suricata.')
+    return '\n'.join(L)
+def trivy(d,fname=''):
+    t=d.decode('utf8','replace'); pk=[];eco=None
+    try:
+        j=json.loads(t); eco='npm'
+        for sec in('dependencies','devDependencies'):
+            for n,v in (j.get(sec) or {}).items():
+                v=re.sub(r'^[\^~>=<\s]+','',str(v)).split(' ')[0]
+                if re.fullmatch(r'\d+(\.\d+)*',v): pk.append((n,v))
+    except Exception:
+        eco='PyPI'
+        for l in t.splitlines():
+            m=re.match(r'\s*([A-Za-z0-9_.\-]+)\s*==\s*([0-9][A-Za-z0-9.\-+]*)',l)
+            if m: pk.append((m.group(1),m.group(2)))
+    if not pk: return 'مش لاقي مكتبات بنسخ محددة. ابعت محتوى requirements.txt (مكتبة==نسخة) أو package.json.'
+    pk=pk[:100]
+    q={'queries':[{'package':{'name':n,'ecosystem':eco},'version':v} for n,v in pk]}
+    try: r=json.loads(urllib.request.urlopen(urllib.request.Request('https://api.osv.dev/v1/querybatch',json.dumps(q).encode(),{'Content-Type':'application/json','User-Agent':'osint-hub-bot'}),timeout=30).read())
+    except Exception: return 'خدمة OSV مش متاحة دلوقتي، جرب بعد شوية.'
+    L=['🛡 فحص ثغرات المكتبات (زي Trivy، المصدر OSV.dev) | %s | %d مكتبة'%(eco,len(pk))]; bad=0
+    for (n,v),res in zip(pk,r.get('results',[])):
+        ids=[x['id'] for x in res.get('vulns',[])]
+        if ids: bad+=1; L.append('🔴 %s %s: %d ثغرة (%s)'%(n,v,len(ids),' ، '.join(ids[:4])))
+    L.append('\n'+('🔴 %d مكتبة فيها ثغرات معروفة. حدّثها. التفاصيل: https://osv.dev/<رقم الثغرة>'%bad if bad else '🟢 مفيش ثغرات معروفة في المكتبات دي حسب OSV (حسب النسخ المكتوبة فقط).'))
+    return '\n'.join(L)
+RULES=[('محاولات دخول SSH فاشلة',r'Failed password|authentication failure|Invalid user',5),('تشغيل PowerShell مشفر',r'(?i)powershell.*(-enc|-encodedcommand)',1),('تحميل ملف بـ certutil/bitsadmin',r'(?i)certutil.*-urlcache|bitsadmin.*/transfer',1),('إنشاء مستخدم جديد',r'(?i)useradd|net user .* /add|adduser',1),('مسح سجلات الأحداث',r'(?i)wevtutil\s+cl|Clear-EventLog|history -c|rm .*\.bash_history',1),('Reverse shell محتمل',r'/dev/tcp/|nc\s+-e|bash -i >&|mkfifo.*nc',1),('حقن SQL في طلب ويب',r"(?i)union\s+select|'\s*or\s*'?1'?\s*=\s*'?1|sleep\(\d+\)|information_schema",1),('Path traversal',r'\.\./\.\./|%2e%2e%2f',1),('ويب شل محتمل',r'(?i)cmd=|eval\(base64|c99|r57|shell_exec',1),('تصعيد صلاحيات sudo/su',r'(?i)sudo:.*COMMAND=|su: .*session opened for user root',3)]
+def sigma(d,fname=''):
+    ls=d.decode('utf8','replace').splitlines()[:50000]; L=['📋 فحص سجلات بقواعد شبيهة بـ Sigma | %d سطر'%len(ls)]; hit=0
+    for nm,p,th in RULES:
+        ms=[l for l in ls if re.search(p,l)]
+        if len(ms)>=th: hit+=1; L.append('🔴 %s: %d سطر\n   مثال: %s'%(nm,len(ms),ms[0][:110]))
+    L.append('\n'+('🟡 %d قاعدة اتطابقت، راجع الأسطر دي.'%hit if hit else '🟢 مفيش تطابق مع القواعد الأساسية (دي قواعد قليلة ومش بديل لـ SIEM كامل).'))
+    return '\n'.join(L)
+RUN['Wireshark']=(pcap,'ابعتلي ملف تسجيل شبكة (.pcap أو .pcapng) كملف (📎 File، حتى 20 ميجا) وأطلعلك ملخص: البروتوكولات وأكثر الأجهزة اتصالا وDNS وبورتات مريبة.')
+RUN['Zeek']=RUN['Wireshark']; RUN['Suricata']=RUN['Wireshark']
+RUN['Trivy']=(trivy,'ابعتلي محتوى requirements.txt (مكتبة==نسخة) أو package.json كنص أو ملف، وأفحص المكتبات في قاعدة ثغرات OSV.')
+RUN['Sigma']=(sigma,'ابعتلي أسطر لوج كنص أو ملف (SSH أو ويندوز أو ويب)، وأطابقها على قواعد كشف شائعة.')
+RUN['Wazuh']=(sigma,'ابعتلي أسطر لوج كنص أو ملف، وأعمل عليها مراقبة وكشف بقواعد أساسية (نسخة خفيفة من Wazuh).')
+RUN['Volatility 3']=(analyze,'ابعتلي ملف (حتى 20 ميجا) وأعمل فرز جنائي خفيف: نوعه وهاشاته ونصوصه وروابطه. تحليل ذاكرة كامل مش ممكن على السيرفر المجاني.')
+RUN['Autopsy']=RUN['Volatility 3']
+TXT['OpenVAS / Greenbone']=('dom','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). مفيش فحص ثغرات نشط، هعمل فحص سلبي لترويسات الأمان وأديك درجة ونصايح.')

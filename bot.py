@@ -149,7 +149,7 @@ HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مص
 /domaincheck نطاق — فحص سلبي (DNS وترويسات HTTPS) للنطاقات المصرح بها فقط
 /authdomain add|remove|list نطاق — إدارة النطاقات التي تملك تصريحا بفحصها
 /ioc قيمة — بحث عن مؤشر (IP أو رابط أو نطاق أو CVE)
-/selftest — اختبار كل الأدوات على عينات آمنة (نجح/فشل)
+/verifydomain دومين — إثبات ملكية دومين (TXT)\n/scan أداة دومين — فحص نشط خفيف عبر GitHub Actions (لدومين مثبت فقط)\n/selftest — اختبار كل الأدوات على عينات آمنة (نجح/فشل)
 /inventory — جرد الأدوات: جوه البوت، تحتاج سيرفر، روابط
 /reports — التقارير المحفوظة لكل فحص (/reports رقم، /reports export)
 
@@ -311,6 +311,24 @@ def handle(chat,text):
     if cmd in('/start','/help'): return send(chat,HELP+'\n/imgcheck — فحص صورة (EXIF وروابط بحث عكسي)\n/ask سؤال — المساعد الذكي يرشّح لك الأداة المناسبة (أو اكتب سؤالك مباشرة)\n/menu — فئات الأدوات بأزرار\n\nالأزرار اللي تحت بتفتحلك كل قسم.',KB)
     if cmd=='/gh': return send(chat,gh_run((arg.split() or [''])[0],' '.join(arg.split()[1:])) if arg.strip() else 'الاستخدام: /gh user|repos|repo|commits|files الاسم  أو  /gh myemail')
     if cmd in('/buttons','/keyboard'): return send(chat,'⌨️ الأزرار رجعت تحت. اضغط على أي قسم.',KB)
+    if cmd=='/verifydomain':
+        import an
+        a=arg.lower().split(); d=a[-1] if a else ''
+        if not re.fullmatch(r'([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}',d): return send(chat,'الاستخدام: /verifydomain example.com  (لدومين بتملكه)\nبعد إضافة سجل TXT: /verifydomain check example.com')
+        if a[0]=='check':
+            r=an.txt_ok(d)
+            return send(chat,'تعذر قراءة DNS دلوقتي، جرب بعد شوية.' if r is None else ('✅ تم إثبات ملكية %s. تقدر تستخدم /scan nmap|nuclei|zap|nikto %s'%(d,d) if r else '❌ سجل TXT لسه مش ظاهر. استنى كام دقيقة وجرب تاني.'))
+        return send(chat,an.verify_text(d))
+    if cmd=='/scan':
+        import an
+        a=arg.lower().split()
+        if len(a)!=2 or a[0] not in an.SCAN_TOOLS or not re.fullmatch(r'([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}',a[1]):
+            return send(chat,'الاستخدام: /scan أداة دومين\nالأدوات:\n'+'\n'.join('• %s: %s'%(k,v) for k,v in an.SCAN_TOOLS.items())+'\nلازم الدومين يكون مثبت ملكيته بـ /verifydomain. الفحص بيتنفذ على GitHub Actions والنتيجة بتيجيلك هنا.')
+        r=an.txt_ok(a[1])
+        if r is None: return send(chat,'تعذر قراءة DNS دلوقتي، جرب بعد شوية.')
+        if not r: return send(chat,'🚫 الدومين ده مش مثبت ملكيته. استخدم /verifydomain %s الأول. مفيش فحص من غير إثبات.'%a[1])
+        e=an.dispatch(a[0],a[1])
+        return send(chat,e if e else '🚀 بدأ فحص %s على %s على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق.'%(a[0],a[1]))
     if cmd=='/selftest':
         send(chat,'⏳ بختبر الأدوات على عينات آمنة، دقيقة تقريبا...'); import an,imgx,gh as _gh
         return send_rep(chat,'selftest','builtin',an.selftest(db,imgx,_gh))

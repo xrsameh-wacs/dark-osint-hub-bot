@@ -162,17 +162,31 @@ SEARCH_LINKS='🔎 روابط البحث العكسي (افتح الموقع و�
 def img_check(chat,m):
     import imgx
     doc=m.get('document'); out='📷 نتيجة فحص الصورة\n'
+    fid=None; mime='image/jpeg'; isdoc=False
     if doc and (doc.get('mime_type') or '').startswith('image/') and (doc.get('file_size') or 0)<=15000000:
-        fi=call('getFile',{'file_id':doc['file_id']})['result']
-        data=urllib.request.urlopen('https://api.telegram.org/file/bot'+TOKEN+'/'+fi['file_path'],timeout=60).read()
+        fid=doc['file_id']; mime=doc['mime_type']; isdoc=True
+    elif m.get('photo'): fid=m['photo'][-1]['file_id']
+    if not fid: return send(chat,'أرسل صورة (يفضل كملف).')
+    fi=call('getFile',{'file_id':fid})['result']
+    data=urllib.request.urlopen('https://api.telegram.org/file/bot'+TOKEN+'/'+fi['file_path'],timeout=60).read()
+    if isdoc:
         ex=imgx.exif(data)
+        out+='\n📋 بيانات EXIF:\n'
         if ex:
             out+='\n'.join('• %s: %s'%(k,v) for k,v in ex.items())
             if 'GPS' in ex: out+='\n• خريطة: https://www.google.com/maps?q='+ex['GPS']
-        else: out+='لا توجد بيانات EXIF في هذا الملف (غير متاح). قد تكون حذفت أو الصيغة غير JPEG.'
-    elif m.get('photo'): out+='وصلت كصورة مضغوطة: تيليجرام يحذف بيانات EXIF منها (غير متاح). أعد إرسالها كملف لقراءة EXIF.'
-    else: out+='أرسل صورة (يفضل كملف).'
-    return send(chat,out+'\n\n'+SEARCH_LINKS+'\n\nملاحظة: هذه أدوات تحقق من المصدر والموقع فقط، بلا تعرف على الوجوه.')
+        else: out+='لا توجد بيانات EXIF في هذا الملف (غير متاح).'
+    else: out+='\nوصلت كصورة مضغوطة: تيليجرام يحذف EXIF منها. أرسلها كملف لو عايز EXIF كاملة.'
+    out+='\n\n🔬 فحص جنائي للصورة:\n'+imgx.forensics(data)
+    send(chat,out)
+    key=os.environ.get('GROQ_API_KEY','').strip()
+    if key:
+        try:
+            v=imgx.vision(data,key,mime)
+            send(chat,'🧠 وصف الصورة وقراءة النص (ذكاء اصطناعي، تقدير وقد يخطئ):\n\n'+v if v else 'الصورة كبيرة على الوصف الذكي (أكبر من حوالي 2.8 ميجا). صغّرها وأعد الإرسال.')
+        except urllib.error.HTTPError as e: print('vis http',e.code,flush=True); send(chat,'الوصف الذكي وصل لحد الاستخدام المجاني مؤقتا، حاول بعد دقيقة.' if e.code==429 else 'تعذر الوصف الذكي الآن.')
+        except Exception as e: print('vis err',type(e).__name__,flush=True); send(chat,'تعذر الوصف الذكي الآن.')
+    return send(chat,SEARCH_LINKS+'\n\nملاحظة: مفيش تعرف على الوجوه أو الأشخاص. البحث العكسي بالروابط فقط (مفيش API مجاني رسمي).')
 GROQ_MODEL=os.environ.get('GROQ_MODEL','openai/gpt-oss-120b')
 HIST=[]
 def sys_prompt():

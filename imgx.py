@@ -52,3 +52,38 @@ def exif(data):
         if mk in (0xDA,0xD9): break
         i+=2+ln
     return {}
+
+def forensics(data):
+    import hashlib, io
+    out=['🔐 SHA-256: '+hashlib.sha256(data).hexdigest(),'🔐 MD5: '+hashlib.md5(data).hexdigest(),'📦 الحجم: %d بايت'%len(data)]
+    hints=[]
+    ex=exif(data) or {}
+    sw=str(ex.get('Software','')).lower()
+    if any(k in sw for k in('photoshop','gimp','lightroom','snapseed','canva','picsart','affinity','pixelmator')): hints.append('اسم برنامج تعديل في البيانات: '+str(ex.get('Software')))
+    if data[:3]==b'\xff\xd8\xff' and not ex: hints.append('لا توجد بيانات EXIF (قد تكون حُذفت بالتعديل أو بالنشر على منصة)')
+    try:
+        from PIL import Image, ImageChops, ImageStat
+        im=Image.open(io.BytesIO(data)); out.append('📐 الأبعاد: %dx%d'%im.size)
+        g=im.convert('L').resize((8,8)); px=list(g.getdata()); av=sum(px)/64
+        h=''.join('1' if p>av else '0' for p in px); out.append('🧬 بصمة بصرية (aHash): %016x'%int(h,2))
+        if im.format=='JPEG':
+            rgb=im.convert('RGB'); b=io.BytesIO(); rgb.save(b,'JPEG',quality=90); b.seek(0)
+            d=ImageChops.difference(rgb,Image.open(b).convert('RGB'))
+            mx=max(e[1] for e in d.getextrema()+[(0,0)]) if False else max(ch[1] for ch in d.getextrema())
+            sd=sum(ImageStat.Stat(d).stddev)/3
+            out.append('🧪 ELA (تحليل مستوى الخطأ): أعلى فرق %d وانحراف %.1f'%(mx,sd))
+            if mx>=60 and sd>=6: hints.append('تفاوت واضح في مستوى الضغط بين مناطق الصورة (قد يدل على لصق أو تعديل)')
+        else: out.append('🧪 ELA: متاح لصيغة JPEG فقط')
+    except ImportError: out.append('🧪 ELA والبصمة البصرية: غير متاحة على هذا السيرفر حاليا')
+    except Exception: out.append('🧪 ELA: تعذر التحليل لهذه الصورة')
+    out.append('⚠️ مؤشرات التلاعب (تقدير فقط، مش دليل قاطع): '+('؛ '.join(hints) if hints else 'لا توجد مؤشرات واضحة'))
+    return '\n'.join(out)
+
+def vision(data,key,mime='image/jpeg'):
+    import base64, json, urllib.request
+    if len(data)>2800000: return None
+    url='data:%s;base64,%s'%(mime,base64.b64encode(data).decode())
+    p=('حلّل الصورة بالعربية المصرية المبسطة وبإيجاز في 3 أقسام: 1) وصف المشهد والمكان والمعالم الظاهرة (إن وُجدت). 2) كل نص ظاهر في الصورة بالحرف (OCR) أو اكتب "لا يوجد نص". 3) عناصر تفيد في التحقق من المصدر (لافتات، لغة، طقس، طراز). ممنوع تحديد هوية أي شخص أو ذكر اسمه أو التعرف عليه من وجهه؛ صف فقط الظاهر (عدد الأشخاص وما يلبسونه). لا تخمّن بلا دليل، وقل "غير واضح" عند الشك.')
+    body=json.dumps({'model':'qwen/qwen3.8-27b','messages':[{'role':'user','content':[{'type':'text','text':p},{'type':'image_url','image_url':{'url':url}}]}],'max_tokens':900,'temperature':0.2}).encode()
+    r=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',body,{'Authorization':'Bearer '+key,'Content-Type':'application/json','User-Agent':'osint-hub-bot/1.0'})
+    return json.loads(urllib.request.urlopen(r,timeout=60).read())['choices'][0]['message']['content'].strip()

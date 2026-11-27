@@ -390,11 +390,22 @@ def txt_ok(domain):
 SCAN_TOOLS={'nmap':'Nmap (أشهر 100 بورت + نسخ الخدمات)','nuclei':'Nuclei (قوالب كشف آمنة)','zap':'OWASP ZAP (فحص سلبي baseline)','nikto':'Nikto (ملفات وإعدادات وكشف معلومات)'}
 def verify_text(domain):
     return ('🔐 إثبات ملكية %s (لازم قبل أي فحص نشط)\nأضف سجل DNS من نوع TXT:\nالاسم: _osint-hub.%s\nالقيمة: osint-hub-verify=%s\nبعد ما يتفعل (ممكن ياخد دقايق) اكتب: /verifydomain check %s'%(domain,domain,proof_code(domain),domain))
+import time
+GIANTS=('google.com','youtube.com','facebook.com','instagram.com','whatsapp.com','microsoft.com','live.com','amazon.com','apple.com','cloudflare.com','github.com','x.com','twitter.com','openai.com','wikipedia.org','netflix.com','linkedin.com','telegram.org','t.me','paypal.com','cisa.gov','nist.gov')
+def is_giant(d): return any(d==g or d.endswith('.'+g) for g in GIANTS) or d.endswith(('.gov','.mil','.edu'))
+DOM_RE=r'([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}'
+def audit(c,event,domain,detail):
+    c.execute('create table if not exists audit(id integer primary key autoincrement, ts text, event text, domain text, detail text)')
+    c.execute('insert into audit(ts,event,domain,detail) values(?,?,?,?)',(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),event,domain,detail)); c.commit()
+def sign(tool,domain,ts):
+    k=(os.environ.get('SCAN_KEY') or '').encode()
+    return hmac.new(k,('%s|%s|%s'%(tool,domain,ts)).encode(),hashlib.sha256).hexdigest() if k else None
 def dispatch(tool,domain):
-    tok=os.environ.get('GH_ACTIONS_TOKEN','').strip()
-    if not tok: return 'الفحص النشط لسه مش متفعل (مفتاح التشغيل مش مضاف).'
-    body=json.dumps({'ref':'main','inputs':{'tool':tool,'domain':domain,'proof':proof_code(domain)}}).encode()
+    tok=os.environ.get('GH_ACTIONS_TOKEN','').strip(); ts=str(int(time.time())); sg=sign(tool,domain,ts)
+    if not tok or not sg: return 'الفحص النشط لسه مش متفعل (مفتاح التشغيل أو التوقيع مش مضاف).'
+    body=json.dumps({'ref':'main','inputs':{'tool':tool,'domain':domain,'ts':ts,'sig':sg}}).encode()
     r=urllib.request.Request('https://api.github.com/repos/xrsameh-wacs/osint-scanner/actions/workflows/scan.yml/dispatches',body,{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'})
     try: urllib.request.urlopen(r,timeout=20); return None
     except urllib.error.HTTPError as e: return 'GitHub رفض تشغيل الفحص (كود %d).'%e.code
     except Exception: return 'تعذر الوصول لـ GitHub الآن.'
+ATTEST='أقر بأني أملك الدومين ده أو معايا تصريح كتابي باختباره.'

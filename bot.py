@@ -21,13 +21,11 @@ def send(chat,text,markup=None):
         d={'chat_id':chat,'text':text[i:i+3900],'disable_web_page_preview':'true'}
         if markup and i+3900>=len(text): d['reply_markup']=json.dumps(markup)
         call('sendMessage',d)
-KBROWS=[['🚨 آخر الحوادث','🖼 أدوات الصور'],['🧰 كل الأدوات','📚 الفهرس'],['🌐 افحص دومين','📷 افحص صورة'],['🤖 اسأل المساعد','🔎 دوّر على حاجة'],['📡 المصادر','💾 نزّل الداتا'],['🔄 حدّث البيانات','❓ مساعدة'],['⬇️ إخفاء الأزرار']]
-KB={'keyboard':[[{'text':t} for t in r] for r in KBROWS],'resize_keyboard':True,'is_persistent':True,'input_field_placeholder':'اختار قسم أو اكتب سؤالك'}
+KBROWS=[['🚨 آخر الحوادث','🖼 أدوات الصور'],['🧰 كل الأدوات','📚 الفهرس'],['🌐 افحص دومين','📷 افحص صورة'],['🤖 اسأل المساعد','🔎 دوّر على حاجة'],['📡 المصادر','💾 نزّل الداتا'],['🔄 حدّث البيانات','❓ مساعدة']]
+KB={'keyboard':[[{'text':t} for t in r] for r in KBROWS],'resize_keyboard':True,'is_persistent':False,'one_time_keyboard':False,'input_field_placeholder':'اختار قسم أو اكتب سؤالك'}
 def kb_action(chat,t):
     t=t.strip()
     if t=='🚨 آخر الحوادث': return handle(chat,'/incidents 10')
-    if t=='🖼 أدوات الصور': return handle_cb(chat,'c:image-verification')
-    if t=='🧰 كل الأدوات': return send(chat,'🔧 اختار فئة الأدوات:',menu())
     if t=='📚 الفهرس': return handle(chat,'/index')
     if t=='🌐 افحص دومين': return handle_cb(chat,'m:dom')
     if t=='📷 افحص صورة': return handle_cb(chat,'m:img')
@@ -36,9 +34,32 @@ def kb_action(chat,t):
     if t=='📡 المصادر': return handle(chat,'/sources')
     if t=='💾 نزّل الداتا': return handle(chat,'/export csv')
     if t=='🔄 حدّث البيانات': return handle(chat,'/updates')
-    if t=='⬇️ إخفاء الأزرار': return send(chat,'تمام، الأزرار اتشالت. لو عايزها ترجع اكتب /start أو /buttons أو /keyboard.',{'remove_keyboard':True})
     if t=='❓ مساعدة': return handle(chat,'/help')
     return None
+BK_MAIN='🔙 القائمة الرئيسية'; BK_CAT='🔙 الفئات'
+def mk(rows): return {'keyboard':[[{'text':t} for t in r] for r in rows],'resize_keyboard':True,'is_persistent':False,'one_time_keyboard':False,'input_field_placeholder':'اختار من القايمة'}
+def grid(items,n=2): return [items[i:i+n] for i in range(0,len(items),n)]
+def cat_tools(cat):
+    c=db(); return [r['name'] for r in c.execute('select name from tools where category=? order by name',(cat,)).fetchall()]
+def cat_kb(cat): return mk(grid(['🔧 '+n for n in cat_tools(cat)][:60])+[[BK_CAT,BK_MAIN]])
+def cats_kb(): return mk(grid(['📂 '+CAT[k] for k in CAT])+[[BK_MAIN]])
+def tool_card(name):
+    c=db(); r=c.execute('select name,category,url from tools where name=?',(name,)).fetchone()
+    if not r: return None
+    return '🔧 %s [%s]\n%s\n%s'%(r['name'],CAT.get(r['category'],r['category']),AR.get(r['name'],'لا يوجد وصف'),r['url'])
+def kb_route(chat,t):
+    t=t.strip()
+    if t==BK_MAIN: send(chat,'⌨️ القائمة الرئيسية، اختار قسم.',KB); return True
+    if t==BK_CAT: send(chat,'📂 اختار فئة الأدوات:',cats_kb()); return True
+    if t=='🖼 أدوات الصور': send(chat,'🖼 أدوات فحص الصور والتحقق. اختار أداة وهتلاقي وصفها ورابطها:',cat_kb('image-verification')); return True
+    if t=='🧰 كل الأدوات': send(chat,'📂 اختار فئة الأدوات:',cats_kb()); return True
+    if t.startswith('📂 '):
+        for k,v in CAT.items():
+            if t=='📂 '+v: send(chat,'📂 %s. اختار أداة:'%v,cat_kb(k)); return True
+    if t.startswith('🔧 '):
+        card=tool_card(t[2:].strip())
+        if card: send(chat,card); return True
+    return False
 BACK={'inline_keyboard':[[{'text':'⬅️ القائمة الرئيسية','callback_data':'m:menu'}]]}
 def menu():
     rows=[[{'text':'🚨 آخر الحوادث','callback_data':'m:inc'},{'text':'🖼 فحص الصور والتحقق','callback_data':'c:image-verification'}],
@@ -220,6 +241,7 @@ def handle(chat,text):
     if cmd=='/ask':
         return ask_ai(chat,arg) if arg else send(chat,'الاستخدام: /ask سؤالك\nأو اكتب سؤالك مباشرة بدون أمر. مثال: أي أداة أستخدم لفحص صورة؟')
     if not text.strip().startswith('/'):
+        if kb_route(chat,text): return
         r=kb_action(chat,text)
         return r if r is not None or text.strip() in sum(KBROWS,[]) else ask_ai(chat,text)
     if cmd in('/start','/help'): return send(chat,HELP+'\n/imgcheck — فحص صورة (EXIF وروابط بحث عكسي)\n/ask سؤال — المساعد الذكي يرشّح لك الأداة المناسبة (أو اكتب سؤالك مباشرة)\n/menu — فئات الأدوات بأزرار\n\nالأزرار اللي تحت بتفتحلك كل قسم.',KB)

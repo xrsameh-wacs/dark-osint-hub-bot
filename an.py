@@ -315,7 +315,7 @@ RUN['Wazuh']=(sigma,'ابعتلي أسطر لوج كنص أو ملف، وأعم�
 RUN['Volatility 3']=(analyze,'ابعتلي ملف (حتى 20 ميجا) وأعمل فرز جنائي خفيف: نوعه وهاشاته ونصوصه وروابطه. تحليل ذاكرة كامل مش ممكن على السيرفر المجاني.')
 RUN['Autopsy']=RUN['Volatility 3']
 TXT['OpenVAS / Greenbone']=('dom','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). مفيش فحص ثغرات نشط، هعمل فحص سلبي لترويسات الأمان وأديك درجة ونصايح.')
-INEXTRA={'EXIF.tools':'فحص EXIF من 📷 افحص صورة','InVID-WeVerify':None}
+INEXTRA={'EXIF.tools':'فحص EXIF من 📷 افحص صورة','InVID-WeVerify':None,'Nmap':'/scan nmap دومين معتمد (على GitHub Actions)'}
 LAB={'Nmap','OpenVAS / Greenbone','Nuclei','Nikto','OWASP ZAP','Burp Suite','Wazuh','Suricata','Zeek','Volatility 3','Autopsy','CAPE Sandbox','BloodHound','sqlmap','Metasploit Framework','Hashcat','John the Ripper','Hydra','Trivy','MISP','OpenCTI','Ghidra','radare2','Wireshark'}
 NEVER={'Sherlock','Maigret','Maltego','Recon-ng','SpiderFoot','GeoSpy'}
 def status(n):
@@ -387,7 +387,7 @@ def txt_ok(domain):
     except Exception: return None
     vals=[a.get('data','').strip('"') for a in j.get('Answer',[]) or []]
     return ('osint-hub-verify='+proof_code(domain)) in vals
-SCAN_TOOLS={'nmap':'Nmap (أشهر 100 بورت + نسخ الخدمات)','nuclei':'Nuclei (قوالب كشف آمنة)','zap':'OWASP ZAP (فحص سلبي baseline)','nikto':'Nikto (ملفات وإعدادات وكشف معلومات)'}
+SCAN_TOOLS={'nmap':'Nmap (أشهر 100 بورت + نسخ الخدمات)','nuclei':'Nuclei (قوالب كشف آمنة)','zap':'OWASP ZAP (فحص سلبي baseline)','nikto':'Nikto (ملفات وإعدادات وكشف معلومات)','ffuf':'ffuf (اكتشاف مسارات مكشوفة بقائمة صغيرة 40 مسار وبطيء، من غير تخمين باسوردات)'}
 def verify_text(domain):
     return ('🔐 إثبات ملكية %s (لازم قبل أي فحص نشط)\nأضف سجل DNS من نوع TXT:\nالاسم: _osint-hub.%s\nالقيمة: osint-hub-verify=%s\nبعد ما يتفعل (ممكن ياخد دقايق) اكتب: /verifydomain check %s'%(domain,domain,proof_code(domain),domain))
 import time
@@ -455,3 +455,11 @@ def passive(d):
         out.append('• نطاقات فرعية من شهادات الشفافية (crt.sh، %d): %s'%(len(s),', '.join(s[:12])+(' ...' if len(s)>12 else '')))
     except Exception: out.append('• crt.sh: غير متاح الآن')
     return '\n'.join(out)
+
+def dispatch_code():
+    tok=os.environ.get('GH_ACTIONS_TOKEN','').strip()
+    if not tok: return 'مفتاح التشغيل مش مضاف.'
+    r=urllib.request.Request('https://api.github.com/repos/xrsameh-wacs/osint-scanner/actions/workflows/code.yml/dispatches',json.dumps({'ref':'main'}).encode(),{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'})
+    try: urllib.request.urlopen(r,timeout=20); return None
+    except urllib.error.HTTPError as e: return 'GitHub رفض التشغيل (كود %d).'%e.code
+    except Exception: return 'تعذر الوصول لـ GitHub الآن.'

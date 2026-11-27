@@ -149,7 +149,7 @@ HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مص
 /domaincheck نطاق — فحص سلبي (DNS وترويسات HTTPS) للنطاقات المصرح بها فقط
 /authdomain add|remove|list نطاق — إدارة النطاقات التي تملك تصريحا بفحصها
 /ioc قيمة — بحث عن مؤشر (IP أو رابط أو نطاق أو CVE)
-/verifydomain دومين — إثبات ملكية دومين (TXT)\n/codescan — فحص كود الريبو بتاعك (Semgrep وTrivy وGitleaks)\n/scan أداة دومين — فحص نشط خفيف عبر GitHub Actions (لدومين مثبت فقط)\n/approve دومين — اعتماد هدف (إقرار ملكية/تصريح)\n/revoke دومين — سحب الاعتماد\n/targets — الأهداف المعتمدة\n/auditlog — سجل الاعتمادات والعمليات\n/fullscan دومين — فحص شامل متعدد المراحل (لدومين معتمد)\n/rescan دومين — إعادة الفحص ومقارنته بالسابق\n/status — حالة الفحوصات\n/report [دومين] — آخر تقرير شامل\n/history [دومين] — سجل الفحوصات\n/selftest — اختبار كل الأدوات على عينات آمنة (نجح/فشل)
+/verifydomain دومين — إثبات ملكية دومين (TXT)\n/jobs — حالة كل المهام\n/registry — سجل الأدوات وحالتها\n/lab — مختبر Staging (localhost وبيانات وهمية)\n/bandit /pipaudit /osv /syft /grype /checkov /semgrep /trivy /gitleaks — بتشغل فحص الكود\n/codescan — فحص كود الريبو بتاعك (Semgrep وTrivy وGitleaks)\n/scan أداة دومين — فحص نشط خفيف عبر GitHub Actions (لدومين مثبت فقط)\n/approve دومين — اعتماد هدف (إقرار ملكية/تصريح)\n/revoke دومين — سحب الاعتماد\n/targets — الأهداف المعتمدة\n/auditlog — سجل الاعتمادات والعمليات\n/fullscan دومين — فحص شامل متعدد المراحل (لدومين معتمد)\n/rescan دومين — إعادة الفحص ومقارنته بالسابق\n/status — حالة الفحوصات\n/report [دومين] — آخر تقرير شامل\n/history [دومين] — سجل الفحوصات\n/selftest — اختبار كل الأدوات على عينات آمنة (نجح/فشل)
 /inventory — جرد الأدوات: جوه البوت، تحتاج سيرفر، روابط
 /reports — التقارير المحفوظة لكل فحص (/reports رقم، /reports export)
 
@@ -319,6 +319,20 @@ def handle(chat,text):
             r=an.txt_ok(d)
             return send(chat,'تعذر قراءة DNS دلوقتي، جرب بعد شوية.' if r is None else ('✅ تم إثبات ملكية %s. تقدر تستخدم /scan nmap|nuclei|zap|nikto %s'%(d,d) if r else '❌ سجل TXT لسه مش ظاهر. استنى كام دقيقة وجرب تاني.'))
         return send(chat,an.verify_text(d))
+    if cmd=='/jobs':
+        import an
+        return send(chat,an.jobs_status())
+    if cmd in('/registry','/toolsreg'):
+        import an
+        return send(chat,an.registry_text())
+    if cmd=='/lab':
+        import an
+        e=an.dispatch_wf('lab.yml'); an.audit(db(),'lab' if not e else 'lab_failed','localhost-lab',e or 'ok')
+        return send(chat,e if e else '🧪 بدأ المختبر (تطبيق وقاعدة بيانات وهميين على localhost جوه GitHub Actions، من غير أي دومين). النتيجة هتجيلك هنا، وتتابعها بـ /jobs.')
+    import an as _an
+    if cmd[1:] in _an.CODE_ALIAS:
+        e=_an.dispatch_code(); _an.audit(db(),'codescan' if not e else 'codescan_failed','xrsameh-wacs/dark-osint-hub-bot','via %s: %s'%(cmd,e or 'ok'))
+        return send(chat,e if e else '🚀 %s بيشتغل ضمن فحص الكود الكامل على ريبوك (Semgrep وTrivy وGitleaks وBandit وpip-audit وOSV وSyft/Grype وCheckov). مفيش تشغيل منفرد للأداة، النتيجة بتيجي بسطر لكل أداة.'%cmd[1:])
     if cmd=='/codescan':
         import an
         e=an.dispatch_code(); an.audit(db(),'codescan' if not e else 'codescan_failed','xrsameh-wacs/dark-osint-hub-bot',e or 'ok')
@@ -443,14 +457,15 @@ def handle(chat,text):
         d=norm_domain(p[0]) if p else None
         if not d or not re.fullmatch(an.DOM_RE,d): return send(chat,'الاستخدام: %s دومين\nمثال: %s example.com (IP مرفوض)'%(cmd,cmd))
         if cmd=='/revoke':
-            n=c.execute('delete from authorized_domains where domain=?',(d,)).rowcount; c.commit(); an.audit(c,'revoke',d,'removed' if n else 'not in list')
+            n=c.execute('delete from authorized_domains where domain=?',(d,)).rowcount; c.commit(); an.audit(c,'revoke',d,'removed' if n else 'not in list'); an.persist_save(c)
             return send(chat,('🛑 اتسحب الاعتماد من %s. أي فحص عليه هيتمنع.'%d) if n else 'الدومين ده مش في القائمة.')
         giant=an.is_giant(d); ok=len(p)>1 and p[1] in('أقر','اقر')
         if giant and not(ok and len(p)>2 and p[2] in('تصريح-كتابي','written')):
             an.audit(c,'approve_refused',d,'major third-party domain without written-permission flag')
             return send(chat,'⛔ %s دومين لجهة كبيرة/حكومية. مرفوض إلا لو عندك تصريح كتابي: /approve %s أقر تصريح-كتابي'%(d,d))
         if not ok: return send(chat,'📝 إقرار قبل الاعتماد لـ %s:\n«%s»\nلو ده صحيح اكتب: /approve %s أقر\nهيتسجل الإقرار بالوقت في السجل.'%(d,an.ATTEST,d))
-        c.execute('insert or replace into authorized_domains values(?,?)',(d,now())); c.commit(); an.audit(c,'approve',d,'manual attestation by admin chat %s: %s%s'%(chat,an.ATTEST,' [written permission flagged]' if giant else ''))
+        c.execute('insert or replace into authorized_domains values(?,?)',(d,now())); c.commit(); an.audit(c,'approve',d,'manual attestation by admin chat %s: %s%s'%(chat,an.ATTEST,' [written permission flagged]' if giant else '')); pe=an.persist_save(c)
+        if pe: send(chat,'⚠️ '+pe+' الاعتماد شغال لحد الريديبلوي الجاي بس.')
         return send(chat,'✅ اتعتمد %s. الأدوات تقدر تشتغل عليه (فحص خفيف بس). /revoke %s يسحب الاعتماد.'%(d,d))
     if cmd=='/authdomain':
         p=arg.split()
@@ -539,6 +554,9 @@ def serve():
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     import shutil
     migrate_domains()
+    try:
+        import an; an.persist_restore(db())
+    except Exception: pass
     import tools_seed; tools_seed.seed(db())
     class H(BaseHTTPRequestHandler):
         def log_message(self,*a): pass

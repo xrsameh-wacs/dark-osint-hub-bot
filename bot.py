@@ -149,7 +149,7 @@ HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مص
 /domaincheck نطاق — فحص سلبي (DNS وترويسات HTTPS) للنطاقات المصرح بها فقط
 /authdomain add|remove|list نطاق — إدارة النطاقات التي تملك تصريحا بفحصها
 /ioc قيمة — بحث عن مؤشر (IP أو رابط أو نطاق أو CVE)
-/verifydomain دومين — إثبات ملكية دومين (TXT)\n/scan أداة دومين — فحص نشط خفيف عبر GitHub Actions (لدومين مثبت فقط)\n/approve دومين — اعتماد هدف (إقرار ملكية/تصريح)\n/revoke دومين — سحب الاعتماد\n/targets — الأهداف المعتمدة\n/auditlog — سجل الاعتمادات والعمليات\n/selftest — اختبار كل الأدوات على عينات آمنة (نجح/فشل)
+/verifydomain دومين — إثبات ملكية دومين (TXT)\n/scan أداة دومين — فحص نشط خفيف عبر GitHub Actions (لدومين مثبت فقط)\n/approve دومين — اعتماد هدف (إقرار ملكية/تصريح)\n/revoke دومين — سحب الاعتماد\n/targets — الأهداف المعتمدة\n/auditlog — سجل الاعتمادات والعمليات\n/fullscan دومين — فحص شامل متعدد المراحل (لدومين معتمد)\n/rescan دومين — إعادة الفحص ومقارنته بالسابق\n/status — حالة الفحوصات\n/report [دومين] — آخر تقرير شامل\n/history [دومين] — سجل الفحوصات\n/selftest — اختبار كل الأدوات على عينات آمنة (نجح/فشل)
 /inventory — جرد الأدوات: جوه البوت، تحتاج سيرفر، روابط
 /reports — التقارير المحفوظة لكل فحص (/reports رقم، /reports export)
 
@@ -333,6 +333,35 @@ def handle(chat,text):
             an.audit(c,'scan_dns_proof',a[1],'tool=%s via TXT'%a[0])
         e=an.dispatch(a[0],a[1]); an.audit(db(),'scan_dispatch' if not e else 'scan_dispatch_failed',a[1],'tool=%s %s'%(a[0],e or 'ok'))
         return send(chat,e if e else '🚀 بدأ فحص %s على %s على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق.'%(a[0],a[1]))
+    if cmd in('/fullscan','/rescan'):
+        import an
+        d=re.sub(r'^https?://','',arg.lower().strip()).split('/')[0]
+        if not re.fullmatch(an.DOM_RE,d): return send(chat,'الاستخدام: %s example.com\nفحص شامل متعدد المراحل (غير إتلافي) لدومين معتمد. اعتمد الدومين الأول بـ /approve دومين.'%cmd)
+        c=db(); appr=c.execute('select 1 from authorized_domains where domain=?',(d,)).fetchone()
+        if not appr and an.txt_ok(d): an.audit(c,'fullscan_dns_proof',d,'via TXT'); appr=True
+        if not appr:
+            an.audit(c,'fullscan_blocked',d,'not approved; passive only')
+            send(chat,'🚫 %s مش معتمد، فمفيش فحص نشط. اعتمده بـ /approve %s (وبعدها أقر) وارجع اكتب %s %s.\nدلوقتي هعمل جمع معلومات عامة فقط:'%(d,d,cmd,d))
+            return send(chat,an.passive(d))
+        e=an.dispatch('full',d); an.audit(db(),'fullscan_dispatch' if not e else 'fullscan_dispatch_failed',d,e or 'ok')
+        return send(chat,e if e else '🚀 بدأ الفحص الشامل لـ %s على GitHub Actions (تقريبا 15 إلى 30 دقيقة). هبعتلك التقدم لكل مرحلة، والتقرير في الآخر. /status لمتابعة الحالة.'%d)
+    if cmd=='/status':
+        import an; return send(chat,an.runs_status())
+    if cmd=='/history':
+        import an; d=re.sub(r'^https?://','',arg.lower().strip()).split('/')[0]
+        xs=an.audit_artifacts(d or None)
+        if xs is None: return send(chat,'تعذر قراءة السجل من GitHub الآن.')
+        if not xs: return send(chat,'لسه مفيش فحوصات شاملة محفوظة%s.'%(' للدومين ده' if d else ''))
+        def fm(a):
+            m=re.match(r'audit-(.+)-(\d{12})-C(\d+)H(\d+)M(\d+)L(\d+)',a['name']); return '• %s | %s | حرجة %s عالية %s متوسطة %s منخفضة %s'%(m.group(1),m.group(2),*m.group(3,4,5,6)) if m else a['name']
+        return send(chat,'🗂 سجل الفحوصات (الأحدث أولا):\n'+'\n'.join(fm(a) for a in xs[:12]))
+    if cmd=='/report':
+        import an; d=re.sub(r'^https?://','',arg.lower().strip()).split('/')[0]
+        xs=an.audit_artifacts(d or None)
+        if not xs: return send(chat,'مفيش تقرير شامل محفوظ%s. شغّل /fullscan دومين الأول.'%(' للدومين ده' if d else ''))
+        h=an.artifact_file(xs[0]['id'],'report.html')
+        if not h: return send(chat,'تعذر تنزيل التقرير الآن، جرب بعد شوية.')
+        call('sendDocument',{'chat_id':chat,'caption':'التقرير الأخير: '+xs[0]['name']},{'document':(xs[0]['name']+'.html',h)}); return
     if cmd=='/selftest':
         send(chat,'⏳ بختبر الأدوات على عينات آمنة، دقيقة تقريبا...'); import an,imgx,gh as _gh
         return send_rep(chat,'selftest','builtin',an.selftest(db,imgx,_gh))

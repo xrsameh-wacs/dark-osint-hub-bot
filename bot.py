@@ -67,7 +67,27 @@ def gh_run(cmd,arg):
     try: return gh.run(cmd,arg) or 'أمر غير معروف.'
     except (LookupError,RuntimeError) as e: return str(e)
     except Exception as e: print('gh err',type(e).__name__,flush=True); return 'حصلت مشكلة، جرب تاني بعد شوية.'
+def an_text(chat,t):
+    import an
+    nm=AN.pop(chat); k=an.TXT.get(nm,('file',))[0]; t=t.strip()
+    if k=='ioc': return handle(chat,'/ioc '+t)
+    if k=='dom': return handle(chat,'/domaincheck '+t)
+    if k=='pwned': return send(chat,an.pwned(t))
+    if k=='idb': return send(chat,an.internetdb(t))
+    if k=='sec': return send(chat,an.secrets(t.encode()))
+    if k=='attack':
+        l='%'+t+'%'; rows=db().execute("select * from incidents where kind='technique' and (id like ? or title like ?) limit 5",(l,l)).fetchall()
+        return send(chat,'\n\n'.join('%s\n%s'%(line(r),A(r['detail'])[:400]) for r in rows) or 'لا توجد تقنية بهذا الاسم.')
+    if k=='subs':
+        d=norm_domain(t)
+        if not d: return send(chat,'دومين غير صالح.')
+        if not db().execute('select 1 from authorized_domains where domain=?',(d,)).fetchone(): return send(chat,'الدومين غير مصرح به. أضفه أولا بـ /authdomain add دومين لو بتملكه أو معاك تصريح.')
+        send(chat,'⏳ لحظة...'); return send(chat,an.crtsh(d))
+    return send(chat,'اكتب /help')
 def kb_route(chat,t):
+    if chat in AN and AN[chat] in __import__('an').TXT and t.strip() and not t.startswith('/') and not t.startswith(('🔧','📂','🔙','⌨️','🐙')) and t.strip() not in sum(KBROWS,[]): an_text(chat,t); return True
+    if chat in AN and AN[chat] in __import__('an').RUN and AN[chat] not in __import__('an').TXT and t.strip() and not t.startswith(('/','🔧','📂','🔙','⌨️','🐙')) and t.strip() not in sum(KBROWS,[]):
+        nm=AN.pop(chat); send(chat,__import__('an').RUN[nm][0](t.encode(),'نص')); return True
     if gh_route(chat,t): return True
     t=t.strip()
     if t==BK_MAIN: send(chat,'⌨️ القائمة الرئيسية، اختار قسم.',KB); return True
@@ -80,6 +100,7 @@ def kb_route(chat,t):
     if t.startswith('🔧 '):
         import an
         nm=t[2:].strip()
+        if nm in an.TXT and nm not in an.RUN: AN[chat]=nm; send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(nm,an.TXT[nm][1])); return True
         if nm in an.RUN: AN[chat]=nm; send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(nm,an.RUN[nm][1])); return True
         card=tool_card(nm)
         if card: send(chat,card); return True
@@ -380,7 +401,7 @@ def process(u):
         try:
             fi=call('getFile',{'file_id':d0['file_id']})['result']
             data=urllib.request.urlopen('https://api.telegram.org/file/bot'+TOKEN+'/'+fi['file_path'],timeout=90).read()
-            fn=AN.pop(cid,'Ghidra'); send(cid,an.RUN[fn][0](data,d0.get('file_name','')))
+            fn=AN.pop(cid,'Ghidra'); send(cid,an.RUN.get(fn,an.RUN['Ghidra'])[0](data,d0.get('file_name','')))
         except Exception as e: send(cid,'تعذر تحليل الملف الآن، حاول مرة أخرى.'); print('an err',type(e).__name__,flush=True)
         return
     if not m.get('text'): send(m['chat']['id'],'أستقبل أوامر نصية وصورا فقط. اكتب /help لعرض الأوامر.'); return

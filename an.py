@@ -463,3 +463,55 @@ def dispatch_code():
     try: urllib.request.urlopen(r,timeout=20); return None
     except urllib.error.HTTPError as e: return 'GitHub رفض التشغيل (كود %d).'%e.code
     except Exception: return 'تعذر الوصول لـ GitHub الآن.'
+
+# ---- P3/P4: registry-driven commands, jobs, persistent approvals (owner /approve only) ----
+def gh_headers():
+    return {'Authorization':'Bearer '+os.environ.get('GH_ACTIONS_TOKEN','').strip(),'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'}
+def dispatch_wf(wf):
+    if not os.environ.get('GH_ACTIONS_TOKEN','').strip(): return 'مفتاح التشغيل مش مضاف.'
+    r=urllib.request.Request('https://api.github.com/repos/%s/actions/workflows/%s/dispatches'%(GH_REPO,wf),json.dumps({'ref':'main'}).encode(),gh_headers())
+    try: urllib.request.urlopen(r,timeout=20); return None
+    except urllib.error.HTTPError as e: return 'GitHub رفض التشغيل (كود %d).'%e.code
+    except Exception: return 'تعذر الوصول لـ GitHub الآن.'
+def jobs_status(n=8):
+    j=gh_api('actions/runs?per_page=%d'%n)
+    if not j: return 'تعذر قراءة المهام من GitHub الآن.'
+    rs=j.get('workflow_runs',[])
+    if not rs: return 'مفيش مهام لسه.'
+    AR={'queued':'في الانتظار','in_progress':'شغال ⏳','completed':'خلص'}; CC={'success':'✅','failure':'❌','cancelled':'⛔'}
+    return '📋 آخر المهام (كل الـworkflows):\n'+'\n'.join('• %s #%s %s %s %sZ'%(r['name'],r['run_number'],AR.get(r['status'],r['status']),CC.get(r.get('conclusion') or '',''),r['created_at'][11:16]) for r in rs)
+def registry():
+    d=gh_api('contents/registry.json')
+    try: return json.loads(__import__('base64').b64decode(d['content']).decode())
+    except Exception: return None
+def registry_text():
+    j=registry()
+    if not j: return 'تعذر قراءة سجل الأدوات من GitHub الآن.'
+    return '🧰 سجل الأدوات (%d):\n'%len(j['tools'])+'\n'.join('• %s %s: %s [%s] %s'%(t['name'],t['version'],t['function'],t['status'],t['command']) for t in j['tools'])
+CODE_ALIAS={'bandit','pipaudit','osv','syft','grype','checkov','semgrep','trivy','gitleaks'}
+STATE_PATH='state/approvals.json'
+def persist_save(c):
+    # store only approvals made by the owner's /approve (attestation recorded in audit), never anything else
+    try:
+        rows=[dict(domain=r[0],added_at=r[1]) for r in c.execute('select domain,added_at from authorized_domains').fetchall()]
+        att=set(r[0] for r in c.execute("select domain from audit where event='approve' and detail like 'manual attestation by admin chat%'").fetchall())
+        rows=[r for r in rows if r['domain'] in att]
+        cur=gh_api('contents/'+STATE_PATH); sha=cur.get('sha') if isinstance(cur,dict) else None
+        body={'message':'update approvals state','content':__import__('base64').b64encode(json.dumps({'approvals':rows},ensure_ascii=False).encode()).decode(),'branch':'main'}
+        if sha: body['sha']=sha
+        r=urllib.request.Request('https://api.github.com/repos/%s/contents/%s'%(GH_REPO,STATE_PATH),json.dumps(body).encode(),gh_headers(),method='PUT')
+        urllib.request.urlopen(r,timeout=25); return None
+    except urllib.error.HTTPError as e: return 'الحفظ الدائم فشل (كود %d): التوكن غالبًا مالوش صلاحية كتابة محتوى.'%e.code
+    except Exception: return 'الحفظ الدائم فشل.'
+def persist_restore(c):
+    try:
+        d=gh_api('contents/'+STATE_PATH)
+        if not isinstance(d,dict) or 'content' not in d: return 0
+        j=json.loads(__import__('base64').b64decode(d['content']).decode()); n=0
+        for r in j.get('approvals',[]):
+            dom=r.get('domain','')
+            if re.fullmatch(DOM_RE,dom) and not c.execute('select 1 from authorized_domains where domain=?',(dom,)).fetchone():
+                c.execute('insert into authorized_domains values(?,?)',(dom,r.get('added_at',''))); n+=1
+                audit(c,'restore',dom,'restored from saved owner approval (attestation recorded at original /approve)')
+        c.commit(); return n
+    except Exception: return 0

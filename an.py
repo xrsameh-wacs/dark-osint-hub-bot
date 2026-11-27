@@ -131,8 +131,9 @@ def pdfinfo(d):
     return out or ['مفيش مؤشرات واضحة داخل هيكل PDF.'],sc
 def analyze(d,fname=''):
     k=kind(d); m5,s1,s2=hashes(d); e=ent(d)
-    L=['🔬 تحليل ساكن للملف (من غير تشغيله)','الاسم: %s | الحجم: %d بايت'%(fname or 'غير متاح',len(d)),'النوع: '+NAMES[k],'SHA-256: '+s2,'MD5: '+m5,'الإنتروبي العام: %.2f من 8 %s'%(e,'(عالي: مضغوط أو مشفر غالبا)' if e>7.2 else '')]
-    sc=2 if e>7.4 and len(d)>5000 else 0
+    L=['🔬 تحليل ساكن للملف (من غير تشغيله)','الاسم: %s | الحجم: %d بايت'%(fname or 'غير متاح',len(d)),'النوع: '+NAMES[k],'SHA-256: '+s2,'MD5: '+m5,'الإنتروبي العام: %.2f من 8 %s'%(e,'(عالي: مضغوط أو مشفر)' if e>7.2 else '')]
+    xe=k in('pe','elf','macho','script')
+    sc=2 if xe and e>7.4 and len(d)>5000 else 0
     if k=='pe': o,s,_=pe(d); L+=o; sc+=s
     elif k=='elf': o,s,_=elf(d); L+=o; sc+=s
     elif k=='zip': o,s=zipinfo(d); L+=o; sc+=s
@@ -140,12 +141,13 @@ def analyze(d,fname=''):
     elif k=='ole' and (b'VBA' in d or b'Macros' in d): L.append('⚠️ فيه ماكرو محتمل'); sc+=3
     st=strings(d); L.append('نصوص مقروءة: %d'%len(st)); blob='\n'.join(st)
     urls=sorted(set(re.findall(r'https?://[^\s"\'<>]{4,80}',blob)))[:8]; ips=sorted(set(re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b',blob)))[:8]
-    if urls: L.append('روابط داخل الملف:\n'+'\n'.join('  • '+u for u in urls)); sc+=1
+    if urls: L.append('روابط داخل الملف:\n'+'\n'.join('  • '+u for u in urls)); sc+=1 if xe else 0
     if ips: L.append('عناوين IP: '+' ، '.join(ips))
     kw=[w for w in('powershell','cmd.exe','/bin/sh','wget ','curl ','keylog','ransom','bitcoin','schtasks','CurrentVersion\\Run') if w.lower() in blob.lower()]
-    if kw: L.append('كلمات لافتة: '+' ، '.join(kw)); sc+=min(len(kw),3)
+    if kw: L.append('كلمات لافتة: '+' ، '.join(kw)); sc+=min(len(kw),3) if xe else 0
     L.append('')
     v='🟢 مفيش مؤشرات خطيرة واضحة' if sc<=2 else ('🟡 فيه علامات تستدعي الحذر' if sc<=6 else '🔴 مشبوه جدا')
+    if not xe and sc==0: v='🟢 ملف عادي (وسائط أو بيانات)، الإنتروبي العالي طبيعي في الملفات المضغوطة ومش علامة خطر'
     L.append('الخلاصة: %s (درجة %d)'%(v,sc))
     L.append('ده تحليل ساكن مبسط بيعوّض Ghidra وradare2 بشكل خفيف: مفيش تفكيك كامل للكود، والملف ماتشغلش. الدرجة تقدير مش حكم نهائي.')
     L.append('للتأكد من السمعة: ابحث بالـ SHA-256 على https://www.virustotal.com (متترفعش ملفات خاصة).')

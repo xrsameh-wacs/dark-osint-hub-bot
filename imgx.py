@@ -18,7 +18,7 @@ def _ifd(t,off,e,tags):
             elif typ==4: res[tag]=struct.unpack(e+'I',raw[:4])[0]
             elif typ==5: res[tag]=_rat(t,vo,e,cnt) if vo is not None else None
     return res
-def exif(data):
+def _exif_jpeg(data):
     """returns dict of readable fields or {} when no EXIF. stdlib only."""
     if data[:2]!=b'\xff\xd8': return {}
     i=2
@@ -87,3 +87,29 @@ def vision(data,key,mime='image/jpeg'):
     body=json.dumps({'model':'qwen/qwen3.8-27b','messages':[{'role':'user','content':[{'type':'text','text':p},{'type':'image_url','image_url':{'url':url}}]}],'max_tokens':900,'temperature':0.2}).encode()
     r=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',body,{'Authorization':'Bearer '+key,'Content-Type':'application/json','User-Agent':'osint-hub-bot/1.0'})
     return json.loads(urllib.request.urlopen(r,timeout=60).read())['choices'][0]['message']['content'].strip()
+
+def kind(d):
+    if d[:3]==b'\xff\xd8\xff': return 'jpeg'
+    if d[:8]==b'\x89PNG\r\n\x1a\n': return 'png'
+    if d[:4]==b'RIFF' and d[8:12]==b'WEBP': return 'webp'
+    if d[:4] in(b'GIF8',): return 'gif'
+    if d[4:8]==b'ftyp' and d[8:12] in(b'heic',b'heix',b'hevc',b'mif1',b'msf1',b'heim',b'heis',b'avif'): return 'heic'
+    return None
+def exif(data):
+    if data[4:8]==b'ftyp':
+        import re
+        m=re.search(b'Exif\\x00\\x00(II\\*\\x00|MM\\x00\\*)',data[:3000000])
+        if not m: return {}
+        tiff=data[m.start()+6:m.start()+6+60000]
+        return _exif_jpeg(b'\xff\xd8\xff\xe1'+struct.pack('>H',len(tiff)+8)+b'Exif\x00\x00'+tiff)
+    return _exif_jpeg(data)
+def to_jpeg(data):
+    """HEIC/WEBP/etc to JPEG bytes for vision; None if no decoder."""
+    import io
+    try:
+        try:
+            import pillow_heif; pillow_heif.register_heif_opener()
+        except ImportError: pass
+        from PIL import Image
+        im=Image.open(io.BytesIO(data)).convert('RGB'); im.thumbnail((1600,1600)); b=io.BytesIO(); im.save(b,'JPEG',quality=85); return b.getvalue()
+    except Exception: return None

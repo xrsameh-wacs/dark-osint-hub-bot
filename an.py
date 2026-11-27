@@ -315,3 +315,66 @@ RUN['Wazuh']=(sigma,'ابعتلي أسطر لوج كنص أو ملف، وأعم�
 RUN['Volatility 3']=(analyze,'ابعتلي ملف (حتى 20 ميجا) وأعمل فرز جنائي خفيف: نوعه وهاشاته ونصوصه وروابطه. تحليل ذاكرة كامل مش ممكن على السيرفر المجاني.')
 RUN['Autopsy']=RUN['Volatility 3']
 TXT['OpenVAS / Greenbone']=('dom','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). مفيش فحص ثغرات نشط، هعمل فحص سلبي لترويسات الأمان وأديك درجة ونصايح.')
+INEXTRA={'EXIF.tools':'فحص EXIF من 📷 افحص صورة','InVID-WeVerify':None}
+LAB={'Nmap','OpenVAS / Greenbone','Nuclei','Nikto','OWASP ZAP','Burp Suite','Wazuh','Suricata','Zeek','Volatility 3','Autopsy','CAPE Sandbox','BloodHound','sqlmap','Metasploit Framework','Hashcat','John the Ripper','Hydra','Trivy','MISP','OpenCTI','Ghidra','radare2','Wireshark'}
+NEVER={'Sherlock','Maigret','Maltego','Recon-ng','SpiderFoot','GeoSpy'}
+def status(n):
+    if n in RUN or n in TXT or n in INEXTRA and INEXTRA[n]: return 'in'
+    if n in NEVER: return 'never'
+    if n in LAB: return 'lab'
+    return 'link'
+def inventory(rows):
+    g={'in':[],'lab':[],'link':[],'never':[]}
+    for n,c in rows: g[status(n)].append((n,c))
+    out=['📋 جرد كل أدوات المكتبة (%d أداة)'%len(rows),'']
+    out.append('✅ بتشتغل جوه البوت دلوقتي (نسخة خفيفة، %d):\n'%len(g['in'])+'، '.join(n for n,c in g['in']))
+    out.append('\n🖥 النسخة الكاملة محتاجة سيرفر حقيقي (VPS) وبتشتغل على أجهزتك ودومينات تملكها بس. اللي لسه مش متاح خالص دلوقتي: '+'، '.join(n for n,c in g['lab'])+'\nوالنسخ الكاملة لأدوات ✅ زي Ghidra وWireshark وNmap-مشابهة محتاجة نفس السيرفر.')
+    out.append('\n🔗 روابط فقط (مفيش API مجاني أو شروط الموقع تمنع، %d):\n'%len(g['link'])+'، '.join(n for n,c in g['link']))
+    out.append('\n⛔ مش هتتبني (تتبع أشخاص أو هوية، %d):\n'%len(g['never'])+'، '.join(n for n,c in g['never']))
+    out.append('\nكل الأدوات للأصول اللي تملكها أو معاك تصريح بيها بس.')
+    return '\n'.join(out)
+def _pe():
+    d=bytearray(1024);d[0:2]=b'MZ';struct.pack_into('<I',d,0x3c,0x80);d[0x80:0x84]=b'PE\0\0'
+    struct.pack_into('<HHIIIHH',d,0x84,0x8664,1,0,0,0,0xf0,0x2022);d[0x98:0x9a]=struct.pack('<H',0x20b)
+    struct.pack_into('<8sIIII',d,0x98+0xf0,b'UPX0',0x1000,0x1000,0x200,0x100); return bytes(d)
+def _pcap():
+    ip=bytes([0x45,0,0,0,0,0,0,0,64,17,0,0,10,0,0,1,8,8,8,8])
+    q=b'\0\0\1\0\0\1\0\0\0\0\0\0\x07example\x03com\0\0\1\0\1'
+    p=b'\0'*12+b'\x08\x00'+ip+struct.pack('>HHHH',5000,53,8+len(q),0)+q
+    return struct.pack('<IHHiIII',0xa1b2c3d4,2,4,0,0,65535,1)+struct.pack('<IIII',100,0,len(p),len(p))+p
+def selftest(db,imgx=None,gh=None,domain_report=None):
+    import concurrent.futures as cf
+    ak='AKIA'+'ABCDEFGHIJKLMNOP'
+    def zipb():
+        b=io.BytesIO(); z=zipfile.ZipFile(b,'w'); z.writestr('word/document.xml','x'); z.close(); return b.getvalue()
+    def hexif():
+        t=b'II*\x00\x08\x00\x00\x00'+struct.pack('<H',1)+struct.pack('<HHI4s',271,2,4,b'App\0')+b'\0\0\0\0'
+        return imgx.exif(b'\0\0\0\x18ftypheic'+b'\0'*12+b'\0\0\0\x06Exif\0\0'+t)
+    def dbq(q): return db().execute(q).fetchone()[0]
+    T=[('Ghidra / radare2 / YARA / Volatility / Autopsy',lambda:'الخلاصة' in analyze(_pe(),'s.exe') and 'UPX' in analyze(_pe(),'s.exe')),
+       ('ExifTool',lambda:'SHA-256' in meta(zipb(),'s.docx')),
+       ('TruffleHog / Semgrep',lambda:'AWS' in secrets(('k="%s"'%ak).encode())),
+       ('Wireshark / Zeek / Suricata',lambda:'example.com' in pcap(_pcap(),'s.pcap')),
+       ('Sigma / Wazuh',lambda:'SSH' in sigma(b'Failed password for root\n'*6)),
+       ('Trivy (OSV.dev)',lambda:'🔴' in trivy(b'requests==2.19.0\n')),
+       ('Have I Been Pwned',lambda:'ظهر' in pwned(hashlib.sha1(b'password').hexdigest())),
+       ('Shodan / Censys (InternetDB)',lambda:'بورتات' in internetdb('8.8.8.8')),
+       ('theHarvester / Amass / subfinder (crt.sh)',lambda:'النطاقات' in crtsh('example.com')),
+       ('CISA KEV / MISP / OpenCTI / VirusTotal (قاعدة محلية)',lambda:dbq('select count(*) from incidents')>0 and dbq('select count(*) from indicators')>0),
+       ('MITRE ATT&CK',lambda:dbq("select count(*) from incidents where kind='technique'")>0),
+       ('أدوات الصور (EXIF/HEIC)',lambda:hexif().get('الشركة المصنعة')=='App' if imgx else False),
+       ('أدوات GitHub (API)',lambda:'octocat' in (gh.run('user','octocat') or '') if gh else False)]
+    res=[]
+    def run(t):
+        try: return t[0],bool(t[1]())
+        except Exception as e: return t[0],False
+    with cf.ThreadPoolExecutor(6) as ex:
+        futs=[ex.submit(run,t) for t in T]
+        for f,t in zip(futs,T):
+            try: res.append(f.result(timeout=100))
+            except Exception: res.append((t[0],False))
+    ok=sum(1 for _,r in res if r)
+    L=['🧪 اختبار ذاتي للأدوات (على عينات آمنة مدمجة، من غير أي فحص لجهات تانية)']+['%s %s'%('✅' if r else '❌',n) for n,r in res]
+    L.append('\nالنتيجة: %d من %d نجح'%(ok,len(res)))
+    if ok<len(res): L.append('ملحوظة: الأدوات اللي بتعتمد على خدمة خارجية ممكن تفشل مؤقتا لو الخدمة مش بترد، أعد الاختبار بعد دقيقة.')
+    return '\n'.join(L)

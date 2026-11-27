@@ -378,3 +378,23 @@ def selftest(db,imgx=None,gh=None,domain_report=None):
     L.append('\nالنتيجة: %d من %d نجح'%(ok,len(res)))
     if ok<len(res): L.append('ملحوظة: الأدوات اللي بتعتمد على خدمة خارجية ممكن تفشل مؤقتا لو الخدمة مش بترد، أعد الاختبار بعد دقيقة.')
     return '\n'.join(L)
+import hmac,os,urllib.error
+def proof_code(domain):
+    k=(os.environ.get('WEBHOOK_SECRET') or 'dev').encode()
+    return hmac.new(k,('osint-hub-verify:'+domain).encode(),hashlib.sha256).hexdigest()[:32]
+def txt_ok(domain):
+    try: j=json.loads(_get('https://dns.google/resolve?name=_osint-hub.%s&type=TXT'%domain,15))
+    except Exception: return None
+    vals=[a.get('data','').strip('"') for a in j.get('Answer',[]) or []]
+    return ('osint-hub-verify='+proof_code(domain)) in vals
+SCAN_TOOLS={'nmap':'Nmap (أشهر 100 بورت + نسخ الخدمات)','nuclei':'Nuclei (قوالب كشف آمنة)','zap':'OWASP ZAP (فحص سلبي baseline)','nikto':'Nikto (ملفات وإعدادات وكشف معلومات)'}
+def verify_text(domain):
+    return ('🔐 إثبات ملكية %s (لازم قبل أي فحص نشط)\nأضف سجل DNS من نوع TXT:\nالاسم: _osint-hub.%s\nالقيمة: osint-hub-verify=%s\nبعد ما يتفعل (ممكن ياخد دقايق) اكتب: /verifydomain check %s'%(domain,domain,proof_code(domain),domain))
+def dispatch(tool,domain):
+    tok=os.environ.get('GH_ACTIONS_TOKEN','').strip()
+    if not tok: return 'الفحص النشط لسه مش متفعل (مفتاح التشغيل مش مضاف).'
+    body=json.dumps({'ref':'main','inputs':{'tool':tool,'domain':domain,'proof':proof_code(domain)}}).encode()
+    r=urllib.request.Request('https://api.github.com/repos/xrsameh-wacs/osint-scanner/actions/workflows/scan.yml/dispatches',body,{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'})
+    try: urllib.request.urlopen(r,timeout=20); return None
+    except urllib.error.HTTPError as e: return 'GitHub رفض تشغيل الفحص (كود %d).'%e.code
+    except Exception: return 'تعذر الوصول لـ GitHub الآن.'

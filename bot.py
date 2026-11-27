@@ -49,6 +49,7 @@ def tool_card(name):
     return '🔧 %s [%s]\n%s\n%s'%(r['name'],CAT.get(r['category'],r['category']),AR.get(r['name'],'لا يوجد وصف'),r['url'])
 GHM=[('👤 حساب مستخدم','user','اكتب اسم المستخدم على جيت هب (مثال: torvalds)'),('📦 مستودعات مستخدم','repos','اكتب اسم المستخدم (مثال: torvalds)'),('ℹ️ معلومات مستودع','repo','اكتب المستودع بالشكل صاحب/اسم (مثال: torvalds/linux)'),('🕒 آخر التعديلات','commits','اكتب المستودع بالشكل صاحب/اسم'),('🔑 فحص ملفات حساسة','files','اكتب المستودع بالشكل صاحب/اسم (بفحص الأسماء فقط)')]
 PEND={}
+AN={}
 def gh_kb(): return mk(grid([x[0] for x in GHM]+['📧 فحص ظهور إيميلي','📂 مستودعاتي','🔎 فحص أسرار مستودعاتي'])+[[BK_MAIN]])
 def gh_route(chat,t):
     t=t.strip()
@@ -77,7 +78,10 @@ def kb_route(chat,t):
         for k,v in CAT.items():
             if t=='📂 '+v: send(chat,'📂 %s. اختار أداة:'%v,cat_kb(k)); return True
     if t.startswith('🔧 '):
-        card=tool_card(t[2:].strip())
+        import an
+        nm=t[2:].strip()
+        if nm in an.RUN: AN[chat]=nm; send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(nm,an.RUN[nm][1])); return True
+        card=tool_card(nm)
         if card: send(chat,card); return True
     return False
 BACK={'inline_keyboard':[[{'text':'⬅️ القائمة الرئيسية','callback_data':'m:menu'}]]}
@@ -368,6 +372,16 @@ def process(u):
     if isimg:
         try: img_check(m['chat']['id'],m)
         except Exception as e: send(m['chat']['id'],'تعذر فحص الصورة الآن، حاول مرة أخرى.'); print('img err',type(e).__name__,flush=True)
+        return
+    if m.get('document'):
+        import an
+        d0=m['document']; cid=m['chat']['id']
+        if (d0.get('file_size') or 0)>20000000: send(cid,'الملف أكبر من 20 ميجا (حد تيليجرام للبوتات).'); return
+        try:
+            fi=call('getFile',{'file_id':d0['file_id']})['result']
+            data=urllib.request.urlopen('https://api.telegram.org/file/bot'+TOKEN+'/'+fi['file_path'],timeout=90).read()
+            fn=AN.pop(cid,'Ghidra'); send(cid,an.RUN[fn][0](data,d0.get('file_name','')))
+        except Exception as e: send(cid,'تعذر تحليل الملف الآن، حاول مرة أخرى.'); print('an err',type(e).__name__,flush=True)
         return
     if not m.get('text'): send(m['chat']['id'],'أستقبل أوامر نصية وصورا فقط. اكتب /help لعرض الأوامر.'); return
     try: handle(m['chat']['id'],m['text'])

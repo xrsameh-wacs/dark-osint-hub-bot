@@ -149,7 +149,7 @@ HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مص
 /domaincheck نطاق — فحص سلبي (DNS وترويسات HTTPS) للنطاقات المصرح بها فقط
 /authdomain add|remove|list نطاق — إدارة النطاقات التي تملك تصريحا بفحصها
 /ioc قيمة — بحث عن مؤشر (IP أو رابط أو نطاق أو CVE)
-/verifydomain دومين — إثبات ملكية دومين (TXT)\n/scan أداة دومين — فحص نشط خفيف عبر GitHub Actions (لدومين مثبت فقط)\n/approve دومين — اعتماد هدف (إقرار ملكية/تصريح)\n/revoke دومين — سحب الاعتماد\n/targets — الأهداف المعتمدة\n/auditlog — سجل الاعتمادات والعمليات\n/fullscan دومين — فحص شامل متعدد المراحل (لدومين معتمد)\n/rescan دومين — إعادة الفحص ومقارنته بالسابق\n/status — حالة الفحوصات\n/report [دومين] — آخر تقرير شامل\n/history [دومين] — سجل الفحوصات\n/selftest — اختبار كل الأدوات على عينات آمنة (نجح/فشل)
+/verifydomain دومين — إثبات ملكية دومين (TXT)\n/codescan — فحص كود الريبو بتاعك (Semgrep وTrivy وGitleaks)\n/scan أداة دومين — فحص نشط خفيف عبر GitHub Actions (لدومين مثبت فقط)\n/approve دومين — اعتماد هدف (إقرار ملكية/تصريح)\n/revoke دومين — سحب الاعتماد\n/targets — الأهداف المعتمدة\n/auditlog — سجل الاعتمادات والعمليات\n/fullscan دومين — فحص شامل متعدد المراحل (لدومين معتمد)\n/rescan دومين — إعادة الفحص ومقارنته بالسابق\n/status — حالة الفحوصات\n/report [دومين] — آخر تقرير شامل\n/history [دومين] — سجل الفحوصات\n/selftest — اختبار كل الأدوات على عينات آمنة (نجح/فشل)
 /inventory — جرد الأدوات: جوه البوت، تحتاج سيرفر، روابط
 /reports — التقارير المحفوظة لكل فحص (/reports رقم، /reports export)
 
@@ -319,6 +319,10 @@ def handle(chat,text):
             r=an.txt_ok(d)
             return send(chat,'تعذر قراءة DNS دلوقتي، جرب بعد شوية.' if r is None else ('✅ تم إثبات ملكية %s. تقدر تستخدم /scan nmap|nuclei|zap|nikto %s'%(d,d) if r else '❌ سجل TXT لسه مش ظاهر. استنى كام دقيقة وجرب تاني.'))
         return send(chat,an.verify_text(d))
+    if cmd=='/codescan':
+        import an
+        e=an.dispatch_code(); an.audit(db(),'codescan' if not e else 'codescan_failed','xrsameh-wacs/dark-osint-hub-bot',e or 'ok')
+        return send(chat,e if e else '🚀 بدأ فحص الكود (Semgrep وTrivy وGitleaks) على الريبو بتاعك dark-osint-hub-bot. النتيجة (أعداد بس، من غير أسرار) هتوصلك هنا.')
     if cmd=='/scan':
         import an
         a=arg.lower().split()

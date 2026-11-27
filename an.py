@@ -409,3 +409,49 @@ def dispatch(tool,domain):
     except urllib.error.HTTPError as e: return 'GitHub رفض تشغيل الفحص (كود %d).'%e.code
     except Exception: return 'تعذر الوصول لـ GitHub الآن.'
 ATTEST='أقر بأني أملك الدومين ده أو معايا تصريح كتابي باختباره.'
+
+GH_REPO='xrsameh-wacs/osint-scanner'
+def gh_api(path,raw=False):
+    tok=os.environ.get('GH_ACTIONS_TOKEN','').strip()
+    r=urllib.request.Request('https://api.github.com/repos/%s/%s'%(GH_REPO,path),headers={'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot'})
+    try:
+        d=urllib.request.urlopen(r,timeout=25).read(); return d if raw else json.loads(d)
+    except Exception: return None
+def runs_status(n=5):
+    j=gh_api('actions/workflows/scan.yml/runs?per_page=%d'%n)
+    if not j: return 'تعذر قراءة حالة الفحوصات من GitHub الآن.'
+    rs=j.get('workflow_runs',[])
+    if not rs: return 'مفيش فحوصات لسه.'
+    AR={'queued':'في الانتظار','in_progress':'شغال ⏳','completed':'خلص'}; CC={'success':'✅','failure':'❌','cancelled':'⛔'}
+    return '📊 آخر الفحوصات:\n'+'\n'.join('• #%s %s %s'%(r['run_number'],AR.get(r['status'],r['status']),CC.get(r.get('conclusion') or '','')+' '+r['created_at'][11:16]+'Z') for r in rs)
+def audit_artifacts(domain=None):
+    j=gh_api('actions/artifacts?per_page=100')
+    if not j: return None
+    xs=[a for a in j.get('artifacts',[]) if a['name'].startswith('audit-') and not a.get('expired') and (not domain or a['name'].startswith('audit-%s-'%domain))]
+    return sorted(xs,key=lambda a:a['created_at'],reverse=True)
+def artifact_file(aid,fname):
+    import zipfile
+    tok=os.environ.get('GH_ACTIONS_TOKEN','').strip()
+    class NoR(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self,*a,**k): return None
+    op=urllib.request.build_opener(NoR)
+    try: op.open(urllib.request.Request('https://api.github.com/repos/%s/actions/artifacts/%s/zip'%(GH_REPO,aid),headers={'Authorization':'Bearer '+tok,'User-Agent':'osint-hub-bot'}),timeout=25)
+    except urllib.error.HTTPError as e:
+        loc=e.headers.get('Location')
+        if not loc: return None
+        try:
+            z=zipfile.ZipFile(io.BytesIO(urllib.request.urlopen(loc,timeout=40).read())); return z.read(fname)
+        except Exception: return None
+    except Exception: return None
+def passive(d):
+    out=['🔎 جمع معلومات عامة (سلبي) عن %s:'%d]
+    for t in ('A','AAAA','MX','NS'):
+        try:
+            j=json.loads(_get('https://dns.google/resolve?name=%s&type=%s'%(d,t),15)); v=[a.get('data','') for a in j.get('Answer',[]) or []][:4]
+            out.append('• %s: %s'%(t,', '.join(v) if v else 'مفيش'))
+        except Exception: out.append('• %s: غير متاح'%t)
+    try:
+        j=json.loads(_get('https://crt.sh/?q=%25.'+d+'&output=json',25)); s=sorted({n.strip().lstrip('*.') for r in j for n in r.get('name_value','').split('\n')})
+        out.append('• نطاقات فرعية من شهادات الشفافية (crt.sh، %d): %s'%(len(s),', '.join(s[:12])+(' ...' if len(s)>12 else '')))
+    except Exception: out.append('• crt.sh: غير متاح الآن')
+    return '\n'.join(out)

@@ -43,6 +43,13 @@ T=[
 ('TruffleHog','code-analysis','https://github.com/trufflesecurity/trufflehog','Secret scanner','AGPL-3.0'),
 ('Have I Been Pwned','breach-data','https://haveibeenpwned.com','Breach notification service','free API for breach list'),
 ('CISA KEV Catalog','threat-intel','https://www.cisa.gov/known-exploited-vulnerabilities-catalog','Known exploited vulnerabilities','public domain'),
+('Google Lens','image-verification','https://lens.google.com','Google reverse image search','free'),
+('Yandex Images','image-verification','https://yandex.com/images/','Reverse image search with strong face-free scene matching','free'),
+('Bing Visual Search','image-verification','https://www.bing.com/visualsearch','Microsoft reverse image search','free'),
+('TinEye','image-verification','https://tineye.com','Reverse image search that tracks image copies','free tier'),
+('InVID-WeVerify','image-verification','https://www.invid-project.eu/tools-and-services/invid-verification-plugin/','Browser plugin to verify images and videos','free'),
+('EXIF.tools','image-verification','https://exif.tools','Online EXIF metadata viewer','free'),
+('GeoSpy','image-verification','https://geospy.ai','AI photo location analysis; enterprise/paid access','paid'),
 ]
 def seed(c):
     for n,cat,u,d,l in T:

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: dark-osint-hub-bot
+    runtime: python
+    plan: free
+    buildCommand: "echo no dependencies"
+    startCommand: "MODE=webhook SET_WEBHOOK=1 python3 bot.py"
+    healthCheckPath: /
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: OWNER_ID
+        value: "8200460154"

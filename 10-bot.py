@@ -1,0 +1,165 @@
+import json, os, sys, time, re, socket, ssl, csv, io, uuid, urllib.request, urllib.parse, html, threading, subprocess
+from lib import *
+from ar import AR, CAT, KIND
+OWNER=int(os.environ.get('OWNER_ID','8200460154'))
+TOKEN=os.environ.get('TELEGRAM_TOKEN') or open(os.path.join(BASE,'.token')).read().strip()
+API='https://api.telegram.org/bot'+TOKEN+'/'
+def call(m,data=None,files=None):
+    if os.environ.get('DRY'): print('DRYCALL',m,(data or {}).get('text','')[:60].replace(chr(10),' '),flush=True); return {'ok':True,'result':[]}
+    if files:
+        b=uuid.uuid4().hex; body=b''
+        for k,v in (data or {}).items(): body+=('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n'%(b,k,v)).encode()
+        for k,(fn,content) in files.items(): body+=('--%s\r\nContent-Disposition: form-data; name="%s"; filename="%s"\r\n\r\n'%(b,k,fn)).encode()+content+b'\r\n'
+        body+=('--%s--\r\n'%b).encode(); r=urllib.request.Request(API+m,body,{'Content-Type':'multipart/form-data; boundary='+b})
+    else: r=urllib.request.Request(API+m,urllib.parse.urlencode(data or {}).encode())
+    return json.loads(urllib.request.urlopen(r,timeout=70).read())
+def send(chat,text):
+    text=str(text or '').strip() or 'لا توجد نتائج.'
+    for i in range(0,max(len(text),1),3900):
+        call('sendMessage',{'chat_id':chat,'text':text[i:i+3900],'disable_web_page_preview':'true'})
+HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مصادر رسمية عامة فقط)
+
+/incidents [عدد] — آخر الحوادث المسجلة (افتراضي 10) مع المصدر والتاريخ
+/search كلمة — بحث في كل الحوادث والأدوات
+/company اسم — كل الحوادث المرتبطة بشركة أو جهة
+/timeline اسم_أو_سنة — خط زمني للحوادث (مثال: /timeline 2023 أو /timeline Adobe)
+/sources — المصادر المستخدمة وآخر تحديث وعدد السجلات
+/verify معرف — تفاصيل سجل واحد ورابط مصدره للتحقق (مثال: /verify hibp:Adobe)
+/export [csv|json] — تصدير الحوادث كملف
+/updates — تحديث الآن من كل المصادر وعرض العدد الجديد
+/tools [فئة] — كتالوج أدوات الأمن مع وصف كل أداة
+/index — الفهرس المركزي للمكتبة
+/domaincheck نطاق — فحص سلبي (DNS وترويسات HTTPS) للنطاقات المصرح بها فقط
+/authdomain add|remove|list نطاق — إدارة النطاقات التي تملك تصريحا بفحصها
+/ioc قيمة — بحث عن مؤشر (IP أو رابط أو نطاق أو CVE)
+
+كل السجلات: مصدر وتاريخ، وأي معلومة ناقصة تظهر "غير متاح".'''
+def A(x): return 'غير متاح' if x in (None,'unavailable','') else str(x)
+def line(r): return '• %s | %s | %s | %s\n  المصدر: %s | %s\n  id: %s'%(A(r['event_date']),KIND.get(r['kind'],r['kind']),A(r['company']) if r['company']!='unavailable' else '-',r['title'],r['source'],A(r['url']),r['id'])
+def q(c,w,a,n=15): return c.execute('select * from incidents '+w+' order by event_date desc limit ?',a+[n]).fetchall()
+def exists_cmd(c,args):
+    return None
+def handle(chat,text):
+    c=db(); parts=text.strip().split(None,1); cmd=parts[0].split('@')[0].lower(); arg=parts[1].strip() if len(parts)>1 else ''
+    if cmd in('/start','/help'): return send(chat,HELP)
+    if cmd=='/incidents':
+        n=int(arg) if re.fullmatch(r'[0-9]{1,3}',arg) else 10; n=max(1,min(n,30))
+        rows=q(c,"where kind in ('data-breach','exploited-vulnerability','advisory')",[],n)
+        return send(chat,'آخر %d حادثة (من %d):\n\n'%(len(rows),c.execute("select count(*) from incidents where kind!='technique'").fetchone()[0])+'\n'.join(line(r) for r in rows))
+    if cmd=='/search':
+        if not arg: return send(chat,'الاستخدام: /search كلمة\nمثال: /search Adobe')
+        l='%'+arg+'%'; rows=q(c,'where title like ? or company like ? or id like ? or detail like ?',[l]*4,15)
+        tl=c.execute('select * from tools where name like ? or description like ? or category like ? limit 10',[l]*3).fetchall()
+        out='نتائج الحوادث (%d):\n\n'%len(rows)+'\n'.join(line(r) for r in rows)
+        if tl: out+='\n\nأدوات:\n'+'\n'.join('🔧 %s — %s'%(t['name'],AR.get(t['name'],t['description'])) for t in tl)
+        return send(chat,out if rows or tl else 'لا توجد نتائج.')
+    if cmd=='/company':
+        if not arg: return send(chat,'الاستخدام: /company اسم_الجهة\nمثال: /company LinkedIn')
+        rows=q(c,'where company like ? or title like ?',['%'+arg+'%']*2,20)
+        return send(chat,('حوادث "%s" (%d):\n\n'%(arg,len(rows))+'\n'.join(line(r) for r in rows)) if rows else 'لا توجد سجلات لهذه الجهة في المصادر المتاحة.')
+    if cmd=='/timeline':
+        if not arg: return send(chat,'الاستخدام: /timeline سنة أو اسم\nمثال: /timeline 2023 أو /timeline Adobe')
+        w,a=('where event_date like ? and kind!="technique"',[arg+'%']) if re.fullmatch(r'[0-9]{4}',arg) else ('where company like ?',['%'+arg+'%'])
+        rows=c.execute('select * from incidents '+w+' order by event_date limit 40',a).fetchall()
+        return send(chat,'\n'.join('%s — %s (%s)'%(A(r['event_date']),r['title'],r['source']) for r in rows) or 'لا توجد سجلات.')
+    if cmd=='/sources':
+        return send(chat,'\n\n'.join('📡 %s\n%s\nالرابط: %s\nآخر جلب: %s | السجلات: %s | الحالة: %s'%(s['name'],s['description'],s['url'],s['last_fetch'],s['records'],s['status']) for s in c.execute('select * from sources')))
+    if cmd=='/verify':
+        if not arg: return send(chat,'الاستخدام: /verify معرف_السجل\nمثال: /verify hibp:Adobe\n(المعرف يظهر في نتائج /search و/incidents)')
+        r=c.execute('select * from incidents where id=?',(arg,)).fetchone() or c.execute('select * from incidents where id like ? limit 1',('%'+arg+'%',)).fetchone()
+        if not r: return send(chat,"لم أجد سجلا بهذا المعرف. جرّب /search ثم انسخ المعرف.")
+        return send(chat,'%s\nالمصدر: %s\nتاريخ الحدث: %s\nتاريخ تحديث المصدر: %s\nوقت الجلب: %s\nالرابط الرسمي للتحقق: %s\nالتفاصيل: %s\n\nتحقق بنفسك من الرابط؛ السجل بيانات وصفية فقط.'%(line(r),r['source'],A(r['event_date']),A(r['source_date']),r['fetched_at'],A(r['url']),r['detail']))
+    if cmd=='/export':
+        fmt='json' if arg.lower()=='json' else 'csv'; rows=[dict(r) for r in c.execute('select * from incidents order by event_date desc')]
+        if fmt=='json': data=json.dumps(rows,ensure_ascii=False,indent=1).encode()
+        else:
+            s=io.StringIO(); w=csv.DictWriter(s,fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows); data=s.getvalue().encode('utf-8-sig')
+        open(os.path.join(BASE,'exports','incidents.'+fmt),'wb').write(data)
+        call('sendDocument',{'chat_id':chat,'caption':'تصدير %d سجل (بيانات وصفية فقط)'%len(rows)},{'document':('incidents.'+fmt,data)}); return
+    if cmd=='/updates':
+        send(chat,'جاري التحديث من المصادر... قد يستغرق دقيقتين.'); before=c.execute('select count(*) from incidents').fetchone()[0]
+        import ingest; res=ingest.run(); after=db().execute('select count(*) from incidents').fetchone()[0]
+        return send(chat,'تم التحديث. حوادث جديدة: %d (الإجمالي %d)\n%s'%(after-before,after,'\n'.join('%s: %s'%k for k in res.items())))
+    if cmd=='/tools':
+        rows=c.execute('select * from tools where category=? order by name',(arg,)).fetchall() if arg in CAT else c.execute('select * from tools order by category,name').fetchall()
+        if not arg or arg not in CAT: send(chat,'الفئات: '+'، '.join('%s (%s)'%(k,v) for k,v in CAT.items())+'\n\nمثال: /tools forensics')
+        return send(chat,'\n\n'.join('🔧 %s [%s]\n%s\n%s'%(t['name'],CAT.get(t['category'],t['category']),AR.get(t['name'],t['description']),t['url']) for t in rows))
+    if cmd=='/index':
+        return send(chat,'الفهرس المركزي:\n\n'+'\n'.join('• %s (%s) — %s — %s سجل'%(i['item'],i['location'],i['description'],i['count']) for i in c.execute('select * from library_index'))+'\n\nأقسام: حوادث الأمن، المؤشرات، كتالوج الأدوات، سجل المصادر.')
+    if cmd=='/authdomain':
+        p=arg.split(); 
+        if not p or p[0]=='list': return send(chat,'النطاقات المصرح بها:\n'+('\n'.join(r[0] for r in c.execute('select domain from authorized_domains')) or 'لا يوجد'))
+        if len(p)<2: return send(chat,'الاستخدام: /authdomain add|remove|list نطاق\nمثال: /authdomain add example.com')
+        d=p[1].lower().strip('/')
+        if p[0]=='add': c.execute('insert or replace into authorized_domains values(?,?)',(d,now())); c.commit(); return send(chat,'تمت الإضافة: %s\nبإضافته تؤكد أنك تملكه أو لديك تصريح بفحصه.'%d)
+        if p[0]=='remove': c.execute('delete from authorized_domains where domain=?',(d,)); c.commit(); return send(chat,'تم الحذف: '+d)
+        return send(chat,'الاستخدام: /authdomain add|remove|list نطاق\nمثال: /authdomain add example.com')
+    if cmd=='/domaincheck':
+        d=arg.lower().replace('https://','').replace('http://','').split('/')[0]
+        if not d: return send(chat,'الاستخدام: /domaincheck نطاق\nمثال: /domaincheck example.com (للنطاقات المصرح بها فقط)')
+        if not c.execute('select 1 from authorized_domains where domain=?',(d,)).fetchone(): return send(chat,'النطاق غير مصرح به. أضفه أولا بـ /authdomain add نطاق إن كنت تملكه أو لديك تصريح. لا أفحص نطاقات غير مصرح بها.')
+        out=['فحص سلبي لـ '+d]
+        try: out.append('IPs: '+', '.join(sorted({x[4][0] for x in socket.getaddrinfo(d,443)})))
+        except Exception as e: out.append('DNS: غير متاح')
+        try:
+            r=urllib.request.urlopen(urllib.request.Request('https://'+d,method='HEAD',headers={'User-Agent':UA}),timeout=12); h=r.headers; out.append('HTTPS: %s'%r.status)
+            for k in ['Strict-Transport-Security','Content-Security-Policy','X-Content-Type-Options','X-Frame-Options','Referrer-Policy']: out.append('%s: %s'%(k,'موجود' if h.get(k) else 'غير موجود'))
+        except Exception as e: out.append('HTTPS: غير متاح (%s)'%type(e).__name__)
+        hb=c.execute("select title,event_date from incidents where kind='data-breach' and detail like ?",('%"domain": "'+d+'"%',)).fetchall()
+        out.append('تسريبات في HIBP لهذا النطاق: '+('; '.join('%s (%s)'%(h[0],h[1]) for h in hb) or 'لا يوجد في القائمة'))
+        return send(chat,'\n'.join(out))
+    if cmd=='/ioc':
+        if not arg: return send(chat,'الاستخدام: /ioc قيمة\nمثال: /ioc 1.2.3.4 أو /ioc CVE-2021-44228 أو /ioc نطاق_أو_رابط')
+        a=arg.strip(); out=[]
+        if len(a)<4: return send(chat,'القيمة قصيرة جدا. اكتب IP أو رابط أو نطاق أو CVE كامل.\nمثال: /ioc 1.2.3.4')
+        a=a[:300]
+        for r in c.execute('select * from indicators where value=? or value like ? limit 10',(a,'%'+a+'%')): out.append('⚠️ %s (%s) | %s | أول ظهور: %s | الحالة: %s | جُلب: %s'%(r['value'],r['type'],r['source'],A(r['first_seen']),r['status'],r['fetched_at']))
+        for r in c.execute('select * from incidents where id like ? or title=?',('%'+a.upper()+'%',a.upper())): out.append(line(r))
+        return send(chat,'\n'.join(out) if out else 'لا نتيجة في المصادر المحلية (لا يعني أنه آمن).')
+    send(chat,'أمر غير معروف.\n\n'+HELP)
+def main():
+    off=0; print('bot started',flush=True)
+    while True:
+        try:
+            for u in call('getUpdates',{'offset':off,'timeout':50})['result']:
+                off=u['update_id']+1; m=u.get('message') or {}
+                if m.get('from',{}).get('id')!=OWNER or m.get('chat',{}).get('type')!='private': continue
+                if not m.get('text'): send(m['chat']['id'],'أستقبل أوامر نصية فقط. اكتب /help لعرض الأوامر.'); continue
+                try: handle(m['chat']['id'],m['text'])
+                except Exception as e: send(m['chat']['id'],'تعذر تنفيذ الأمر الآن، حاول بعد دقيقة. إن تكرر استخدم /help'); print('handler err',text if False else m['text'].split()[0],type(e).__name__,flush=True)
+        except Exception as e: print('poll err',type(e).__name__,flush=True); time.sleep(5)
+SECRET=os.environ.get('WEBHOOK_SECRET','')
+def process(u):
+    m=u.get('message') or {}
+    if m.get('from',{}).get('id')!=OWNER or m.get('chat',{}).get('type')!='private': return
+    if not m.get('text'): send(m['chat']['id'],'أستقبل أوامر نصية فقط. اكتب /help لعرض الأوامر.'); return
+    try: handle(m['chat']['id'],m['text'])
+    except Exception as e: send(m['chat']['id'],'تعذر تنفيذ الأمر الآن، حاول بعد دقيقة. إن تكرر استخدم /help'); print('handler err',type(e).__name__,flush=True)
+def bg_refresh():
+    time.sleep(20)
+    try:
+        import ingest; ingest.run(); print('refresh done',flush=True)
+    except Exception as e: print('refresh err',type(e).__name__,flush=True)
+def serve():
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import shutil
+    if not os.path.exists(DB) and os.path.exists(os.path.join(BASE,'snapshot.db')): shutil.copy(os.path.join(BASE,'snapshot.db'),DB)
+    db().close()
+    class H(BaseHTTPRequestHandler):
+        def log_message(self,*a): pass
+        def do_GET(self):
+            self.send_response(200); self.end_headers(); self.wfile.write(b'ok')
+        def do_POST(self):
+            n=int(self.headers.get('Content-Length') or 0); body=self.rfile.read(n) if n<1000000 else b''
+            if not SECRET or self.path!='/tg/'+SECRET or self.headers.get('X-Telegram-Bot-Api-Secret-Token')!=SECRET:
+                self.send_response(403); self.end_headers(); return
+            self.send_response(200); self.end_headers()
+            try: threading.Thread(target=process,args=(json.loads(body),),daemon=True).start()
+            except Exception: pass
+    url=os.environ.get('RENDER_EXTERNAL_URL') or os.environ.get('PUBLIC_URL')
+    if url and os.environ.get('SET_WEBHOOK')=='1':
+        print(call('setWebhook',{'url':url+'/tg/'+SECRET,'secret_token':SECRET,'allowed_updates':json.dumps(['message']),'drop_pending_updates':'false'}),flush=True)
+    threading.Thread(target=bg_refresh,daemon=True).start()
+    print('webhook server on',os.environ.get('PORT','10000'),flush=True)
+    ThreadingHTTPServer(('0.0.0.0',int(os.environ.get('PORT','10000'))),H).serve_forever()
+if __name__=="__main__": serve() if os.environ.get('MODE')=='webhook' else main()

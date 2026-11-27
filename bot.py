@@ -13,10 +13,33 @@ def call(m,data=None,files=None):
         body+=('--%s--\r\n'%b).encode(); r=urllib.request.Request(API+m,body,{'Content-Type':'multipart/form-data; boundary='+b})
     else: r=urllib.request.Request(API+m,urllib.parse.urlencode(data or {}).encode())
     return json.loads(urllib.request.urlopen(r,timeout=70).read())
-def send(chat,text):
+TL=threading.local()
+def send(chat,text,markup=None):
     text=str(text or '').strip() or 'لا توجد نتائج.'
+    markup=markup or getattr(TL,'markup',None)
     for i in range(0,max(len(text),1),3900):
-        call('sendMessage',{'chat_id':chat,'text':text[i:i+3900],'disable_web_page_preview':'true'})
+        d={'chat_id':chat,'text':text[i:i+3900],'disable_web_page_preview':'true'}
+        if markup and i+3900>=len(text): d['reply_markup']=json.dumps(markup)
+        call('sendMessage',d)
+BACK=[[{'text':'⬅️ القائمة الرئيسية','callback_data':'m:menu'}]]
+def menu():
+    rows=[[{'text':'📰 آخر الحوادث','callback_data':'m:inc'},{'text':'🖼 فحص الصور والتحقق','callback_data':'c:image-verification'}],
+          [{'text':'📚 الفهرس','callback_data':'m:index'},{'text':'📡 المصادر','callback_data':'m:src'}],
+          [{'text':'🌐 فحص النطاقات','callback_data':'m:dom'},{'text':'📷 /imgcheck','callback_data':'m:img'}]]
+    ks=[k for k in CAT if k!='image-verification']
+    for i in range(0,len(ks),2): rows.append([{'text':'🔧 '+CAT[k],'callback_data':'c:'+k} for k in ks[i:i+2]])
+    return {'inline_keyboard':rows}
+def handle_cb(chat,data):
+    TL.markup=BACK
+    try:
+        if data=='m:menu': TL.markup=None; return send(chat,'القائمة الرئيسية: اختر قسما.',menu())
+        if data.startswith('c:') and data[2:] in CAT: return handle(chat,'/tools '+data[2:])
+        if data=='m:inc': return handle(chat,'/incidents 10')
+        if data=='m:index': return handle(chat,'/index')
+        if data=='m:src': return handle(chat,'/sources')
+        if data=='m:dom': return send(chat,'🌐 فحص النطاقات (للنطاقات التي تملك تصريحا بفحصها فقط):\n/authdomain add example.com — إضافة نطاق مصرح\n/domaincheck example.com — فحص سلبي مع درجة من 100 ونصائح إصلاح')
+        if data=='m:img': return send(chat,IMG_USAGE)
+    finally: TL.markup=None
 HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مصادر رسمية عامة فقط)
 
 /incidents [عدد] — آخر الحوادث المسجلة (افتراضي 10) مع المصدر والتاريخ
@@ -117,9 +140,26 @@ def domain_report(d):
     out.append(''); out.append('تسريبات في قائمة HIBP لهذا النطاق: '+('; '.join('%s (%s)'%(x[0],x[1]) for x in hb) or 'لا يوجد في القائمة'))
     out.append('ملاحظة: الدرجة تقديرية وتغطي ترويسات الأمان فقط، وليست تقييما كاملا للموقع.')
     return '\n'.join(out)
+IMG_USAGE='📷 /imgcheck — فحص صورة\n1) أرسل الصورة كملف (📎 ثم ملف/File) مع التعليق /imgcheck لأقرأ بيانات EXIF بالكامل (تيليجرام يحذفها من الصور العادية).\n2) أرفق روابط البحث العكسي الجاهزة: Google Lens وYandex وBing وTinEye (ارفع الصورة في الموقع).\nلا يوجد أي تعرف على الوجوه أو تحديد هوية أشخاص.'
+SEARCH_LINKS='🔎 روابط البحث العكسي (افتح الموقع وارفع الصورة):\n• Google Lens: https://lens.google.com\n• Yandex: https://yandex.com/images/\n• Bing: https://www.bing.com/visualsearch\n• TinEye: https://tineye.com\n• InVID-WeVerify: https://www.invid-project.eu/tools-and-services/invid-verification-plugin/'
+def img_check(chat,m):
+    import imgx
+    doc=m.get('document'); out='📷 نتيجة فحص الصورة\n'
+    if doc and (doc.get('mime_type') or '').startswith('image/') and (doc.get('file_size') or 0)<=15000000:
+        fi=call('getFile',{'file_id':doc['file_id']})['result']
+        data=urllib.request.urlopen('https://api.telegram.org/file/bot'+TOKEN+'/'+fi['file_path'],timeout=60).read()
+        ex=imgx.exif(data)
+        if ex:
+            out+='\n'.join('• %s: %s'%(k,v) for k,v in ex.items())
+            if 'GPS' in ex: out+='\n• خريطة: https://www.google.com/maps?q='+ex['GPS']
+        else: out+='لا توجد بيانات EXIF في هذا الملف (غير متاح). قد تكون حذفت أو الصيغة غير JPEG.'
+    elif m.get('photo'): out+='وصلت كصورة مضغوطة: تيليجرام يحذف بيانات EXIF منها (غير متاح). أعد إرسالها كملف لقراءة EXIF.'
+    else: out+='أرسل صورة (يفضل كملف).'
+    return send(chat,out+'\n\n'+SEARCH_LINKS+'\n\nملاحظة: هذه أدوات تحقق من المصدر والموقع فقط، بلا تعرف على الوجوه.')
 def handle(chat,text):
     c=db(); parts=text.strip().split(None,1); cmd=parts[0].split('@')[0].lower(); arg=parts[1].strip() if len(parts)>1 else ''
-    if cmd in('/start','/help'): return send(chat,HELP)
+    if cmd in('/start','/help','/menu'): return send(chat,HELP+'\n/imgcheck — فحص صورة (EXIF وروابط بحث عكسي)\n/menu — القائمة بأزرار',menu())
+    if cmd=='/imgcheck': return send(chat,IMG_USAGE)
     if cmd=='/incidents':
         n=int(arg) if re.fullmatch(r'[0-9]{1,3}',arg) else 10; n=max(1,min(n,30))
         rows=q(c,"where kind in ('data-breach','exploited-vulnerability','advisory')",[],n)
@@ -204,9 +244,23 @@ SECRET=os.environ.get('WEBHOOK_SECRET','')
 READY=threading.Event()
 def process(u):
     READY.wait(150)
+    cb=u.get('callback_query')
+    if cb:
+        m=cb.get('message') or {}
+        if cb.get('from',{}).get('id')!=OWNER or m.get('chat',{}).get('type')!='private': return
+        try: call('answerCallbackQuery',{'callback_query_id':cb['id']})
+        except Exception: pass
+        try: handle_cb(m['chat']['id'],cb.get('data',''))
+        except Exception as e: send(m['chat']['id'],'تعذر تنفيذ الأمر الآن، حاول بعد دقيقة. إن تكرر استخدم /help'); print('cb err',type(e).__name__,flush=True)
+        return
     m=u.get('message') or {}
     if m.get('from',{}).get('id')!=OWNER or m.get('chat',{}).get('type')!='private': return
-    if not m.get('text'): send(m['chat']['id'],'أستقبل أوامر نصية فقط. اكتب /help لعرض الأوامر.'); return
+    isimg=m.get('photo') or (m.get('document') and (m['document'].get('mime_type') or '').startswith('image/'))
+    if isimg:
+        try: img_check(m['chat']['id'],m)
+        except Exception as e: send(m['chat']['id'],'تعذر فحص الصورة الآن، حاول مرة أخرى.'); print('img err',type(e).__name__,flush=True)
+        return
+    if not m.get('text'): send(m['chat']['id'],'أستقبل أوامر نصية وصورا فقط. اكتب /help لعرض الأوامر.'); return
     try: handle(m['chat']['id'],m['text'])
     except Exception as e: send(m['chat']['id'],'تعذر تنفيذ الأمر الآن، حاول بعد دقيقة. إن تكرر استخدم /help'); print('handler err',type(e).__name__,flush=True)
 def bg_refresh():
@@ -225,6 +279,7 @@ def serve():
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     import shutil
     migrate_domains()
+    import tools_seed; tools_seed.seed(db())
     class H(BaseHTTPRequestHandler):
         def log_message(self,*a): pass
         def do_GET(self):
@@ -238,7 +293,7 @@ def serve():
             except Exception: pass
     url=os.environ.get('RENDER_EXTERNAL_URL') or os.environ.get('PUBLIC_URL')
     if url and os.environ.get('SET_WEBHOOK')=='1':
-        print(call('setWebhook',{'url':url+'/tg/'+SECRET,'secret_token':SECRET,'allowed_updates':json.dumps(['message']),'drop_pending_updates':'false'}),flush=True)
+        print(call('setWebhook',{'url':url+'/tg/'+SECRET,'secret_token':SECRET,'allowed_updates':json.dumps(['message','callback_query']),'drop_pending_updates':'false'}),flush=True)
     threading.Thread(target=bg_refresh,daemon=True).start()
     print('webhook server on',os.environ.get('PORT','10000'),flush=True)
     ThreadingHTTPServer(('0.0.0.0',int(os.environ.get('PORT','10000'))),H).serve_forever()

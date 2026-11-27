@@ -21,7 +21,7 @@ def send(chat,text,markup=None):
         d={'chat_id':chat,'text':text[i:i+3900],'disable_web_page_preview':'true'}
         if markup and i+3900>=len(text): d['reply_markup']=json.dumps(markup)
         call('sendMessage',d)
-KBROWS=[['🚨 آخر الحوادث','🖼 أدوات الصور'],['🧰 كل الأدوات','📚 الفهرس'],['🌐 افحص دومين','📷 افحص صورة'],['🤖 اسأل المساعد','🔎 دوّر على حاجة'],['📡 المصادر','💾 نزّل الداتا'],['🔄 حدّث البيانات','❓ مساعدة']]
+KBROWS=[['🚨 آخر الحوادث','🖼 أدوات الصور'],['🧰 كل الأدوات','📚 الفهرس'],['🌐 افحص دومين','📷 افحص صورة'],['🤖 اسأل المساعد','🔎 دوّر على حاجة'],['📡 المصادر','💾 نزّل الداتا'],['🔄 حدّث البيانات','❓ مساعدة'],['⬇️ إخفاء الأزرار']]
 KB={'keyboard':[[{'text':t} for t in r] for r in KBROWS],'resize_keyboard':True,'is_persistent':True,'input_field_placeholder':'اختار قسم أو اكتب سؤالك'}
 def kb_action(chat,t):
     t=t.strip()
@@ -36,6 +36,7 @@ def kb_action(chat,t):
     if t=='📡 المصادر': return handle(chat,'/sources')
     if t=='💾 نزّل الداتا': return handle(chat,'/export csv')
     if t=='🔄 حدّث البيانات': return handle(chat,'/updates')
+    if t=='⬇️ إخفاء الأزرار': return send(chat,'تمام، الأزرار اتشالت. لو عايزها ترجع اكتب /start أو /buttons أو /keyboard.',{'remove_keyboard':True})
     if t=='❓ مساعدة': return handle(chat,'/help')
     return None
 BACK={'inline_keyboard':[[{'text':'⬅️ القائمة الرئيسية','callback_data':'m:menu'}]]}
@@ -222,6 +223,7 @@ def handle(chat,text):
         r=kb_action(chat,text)
         return r if r is not None or text.strip() in sum(KBROWS,[]) else ask_ai(chat,text)
     if cmd in('/start','/help'): return send(chat,HELP+'\n/imgcheck — فحص صورة (EXIF وروابط بحث عكسي)\n/ask سؤال — المساعد الذكي يرشّح لك الأداة المناسبة (أو اكتب سؤالك مباشرة)\n/menu — فئات الأدوات بأزرار\n\nالأزرار اللي تحت بتفتحلك كل قسم.',KB)
+    if cmd in('/buttons','/keyboard'): return send(chat,'⌨️ الأزرار رجعت تحت. اضغط على أي قسم.',KB)
     if cmd=='/menu': return send(chat,'🔧 اختر قسما:',menu())
     if cmd=='/imgcheck': return send(chat,IMG_USAGE)
     if cmd=='/incidents':

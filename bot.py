@@ -430,6 +430,7 @@ def handle(chat,text):
         if fmt=='json': data=json.dumps(rows,ensure_ascii=False,indent=1).encode()
         else:
             s=io.StringIO(); w=csv.DictWriter(s,fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows); data=s.getvalue().encode('utf-8-sig')
+        os.makedirs(os.path.join(BASE,'exports'),exist_ok=True)
         open(os.path.join(BASE,'exports','incidents.'+fmt),'wb').write(data)
         call('sendDocument',{'chat_id':chat,'caption':'تصدير %d سجل (بيانات وصفية فقط)'%len(rows)},{'document':('incidents.'+fmt,data)}); return
     if cmd=='/updates':

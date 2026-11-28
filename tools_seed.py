@@ -43,6 +43,8 @@ T=[
 ('TruffleHog','code-analysis','https://github.com/trufflesecurity/trufflehog','Secret scanner','AGPL-3.0'),
 ('Have I Been Pwned','breach-data','https://haveibeenpwned.com','Breach notification service','free API for breach list'),
 ('CISA KEV Catalog','threat-intel','https://www.cisa.gov/known-exploited-vulnerabilities-catalog','Known exploited vulnerabilities','public domain'),
+('AbuseIPDB','threat-intel','https://www.abuseipdb.com','IP abuse reports and reputation score','free API tier (1000 checks/day)'),
+('AlienVault OTX','threat-intel','https://otx.alienvault.com','Community threat intelligence pulses','free API tier'),
 ('Google Lens','image-verification','https://lens.google.com','Google reverse image search','free'),
 ('Yandex Images','image-verification','https://yandex.com/images/','Reverse image search with strong face-free scene matching','free'),
 ('Bing Visual Search','image-verification','https://www.bing.com/visualsearch','Microsoft reverse image search','free'),

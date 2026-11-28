@@ -132,6 +132,14 @@ def send_rep(chat,tool,target,text):
 def an_text(chat,t):
     import an
     nm=AN.pop(chat); k=an.TXT.get(nm,('file',))[0]; t=t.strip(); send=lambda c,x,_n=nm,_t=t: send_rep(c,_n,_t if k!='pwned' else 'hidden',x)
+    if k=='kev': return send(chat,an.kev_lookup(t))
+    if k=='censys': return send(chat,'⚠️ Censys مش متاح فعليا على البوت: محتاج حساب ومفتاح API خاص بيه، ومفيش مفتاح مضاف حاليا. بيانات IP مجانية حقيقية متاحة من أداة Shodan (InternetDB) في قسم OSINT.')
+    if k=='plat': return send(chat,an.PLAT_TEXT.get(nm,'الأداة دي منصة محتاجة سيرفر خاص بيك ومش بتشتغل من البوت.'))
+    if k=='harv':
+        d=norm_domain(t)
+        if not d: return send(chat,'دومين غير صالح.')
+        if not db().execute('select 1 from authorized_domains where domain=?',(d,)).fetchone(): return send(chat,'الدومين غير مصرح به. أضفه أولا بـ /authdomain add دومين لو بتملكه أو معاك تصريح.')
+        e=an.dispatch_files('harvester', d, d); return send(chat, e if e else '🚀 بدأ theHarvester على %s على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق. /jobs للمتابعة.'%d)
     if k=='ioc': return handle(chat,'/ioc '+t)
     if k=='dom': return handle(chat,'/domaincheck '+t)
     if k=='pwned': return send(chat,an.pwned(t))
@@ -140,7 +148,14 @@ def an_text(chat,t):
     if k=='user': return handle(chat,'/username '+t)
     if k=='attack':
         l='%'+t+'%'; rows=db().execute("select * from incidents where kind='technique' and (id like ? or title like ?) limit 5",(l,l)).fetchall()
-        return send(chat,'\n\n'.join('%s\n%s'%(line(r),A(r['detail'])[:400]) for r in rows) or 'لا توجد تقنية بهذا الاسم.')
+        def _atk(r):
+            try: det=json.loads(r['detail'] or '{}')
+            except Exception: det={}
+            parts=[line(r)]
+            if det.get('desc'): parts.append(det['desc'])
+            if det.get('tactics'): parts.append('التكتيكات: '+', '.join(det['tactics']))
+            return '\n'.join(parts)
+        return send(chat,'\n\n'.join(_atk(r) for r in rows) or 'لا توجد تقنية بهذا الاسم.')
     if k=='subs':
         d=norm_domain(t)
         if not d: return send(chat,'دومين غير صالح.')
@@ -148,6 +163,7 @@ def an_text(chat,t):
         send(chat,'⏳ لحظة...'); return send(chat,an.crtsh(d))
     return send(chat,'اكتب /help')
 def kb_route(chat,t):
+    if chat in AN and AN[chat] in __import__('an').FILE_TOOLS and t.strip() and not t.startswith('/') and not t.startswith(('🔧','📂','🔙','⌨️','🐙')) and t.strip() not in sum(KBROWS,[]): send(chat,'الأداة دي بتشتغل على ملف: ابعت الملف نفسه كملف (📎 File) وأنا أرفعه وأشغّل الأداة عليه.'); return True
     if chat in AN and AN[chat] in __import__('an').TXT and t.strip() and not t.startswith('/') and not t.startswith(('🔧','📂','🔙','⌨️','🐙')) and t.strip() not in sum(KBROWS,[]): an_text(chat,t); return True
     if chat in AN and AN[chat] in __import__('an').RUN and AN[chat] not in __import__('an').TXT and t.strip() and not t.startswith(('/','🔧','📂','🔙','⌨️','🐙')) and t.strip() not in sum(KBROWS,[]):
         nm=AN.pop(chat); send(chat,__import__('an').RUN[nm][0](t.encode(),'نص')); return True
@@ -165,6 +181,7 @@ def kb_route(chat,t):
         nm=t[2:].strip()
         if nm in an.TXT and nm not in an.RUN: AN[chat]=nm; send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(nm,an.TXT[nm][1])); return True
         if nm in an.RUN: AN[chat]=nm; send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(nm,an.RUN[nm][1])); return True
+        if nm in an.FILE_TOOLS: AN[chat]=nm; send(chat,'🔧 %s (بيشتغل على GitHub Actions)\n%s'%(nm,an.FILE_TOOLS[nm][1])); return True
         card=tool_card(nm)
         if card: send(chat,card); return True
     return False
@@ -191,6 +208,7 @@ def handle_cb(chat,data):
                 import an
                 if _val in an.TXT and _val not in an.RUN: AN[chat]=_val; return send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(_val,an.TXT[_val][1]),sec_kb(_sid))
                 if _val in an.RUN: AN[chat]=_val; return send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(_val,an.RUN[_val][1]),sec_kb(_sid))
+                if _val in an.FILE_TOOLS: AN[chat]=_val; return send(chat,'🔧 %s (بيشتغل على GitHub Actions)\n%s'%(_val,an.FILE_TOOLS[_val][1]),sec_kb(_sid))
                 return send(chat,'الأداة دي مش متاحة من الزر دلوقتي.',sec_kb(_sid))
             return send(chat,_val,sec_kb(_sid))
         if data.startswith('s:') and data[2:] in SEC_TEXT: return send(chat,SEC_TEXT[data[2:]],sec_kb(data[2:]))
@@ -207,10 +225,10 @@ SECTIONS=[('osint','🔍 استخبارات المصادر المفتوحة OSIN
 SEC_TEXT={
 'osint':'🔍 استخبارات المصادر المفتوحة OSINT\nالقسم ده بيجمع معلومات علنية من مصادر عامة، من غير أي فحص مباشر على الهدف.\n\n• النطاقات الفرعية: اكتشاف نطاقات أي دومين من شهادات SSL العلنية (crt.sh) — لازم الدومين يكون مصرح بيه.\n• بيانات IP العامة: بورتات وثغرات معروفة لأي عنوان IP من بيانات Shodan InternetDB المفهرسة.\n• فحص باسورد مسرب: تتأكد باسورد ظهر في تسريبات معروفة ولا لأ (بيتبعت أول 5 حروف من الهاش بس).\n• بحث المكتبة: دوّر بكلمة في الحوادث والأدوات المسجلة (/search).\n• حوادث جهة: كل الحوادث المرتبطة بشركة أو جهة (/company).\n• الفهرس المركزي: أقسام المكتبة وعدد سجلاتها (/index).\n• بحث اسم مستخدم: دوّر على حسابات علنية بنفس اسم المستخدم في أهم 300 موقع عن طريق Maigret — /username اسم (لأسماء تخصك أو معاك تصريح بيها).',
 'web':'🌐 فحص أمان المواقع\nفحوص نشطة خفيفة وغير إتلافية، بتتنفذ على GitHub Actions، ولازم الدومين يكون معتمد أو مثبت ملكيته الأول.\n\n• فحص ترويسات فوري جوه البوت: ترويسات الأمان ودرجة من 100 لأي دومين مصرح بيه (من زر فحص الترويسات تحت).\n• /scan أداة دومين — الأدوات: nuclei (قوالب كشف آمنة)، zap (فحص سلبي)، nikto (ملفات وإعدادات)، ffuf (مسارات مكشوفة)، testssl (شهادات وتشفير TLS)، httpx (مضيف حي وتقنيات).\n• /fullscan دومين — فحص شامل بكل المراحل (تقريباً 15-30 دقيقة).\n• /rescan دومين — إعادة الفحص والمقارنة باللي قبله.\n• /status — حالة آخر الفحوصات.\n• الاعتماد والإثبات: /approve دومين (إقرار ملكية/تصريح)، /verifydomain دومين (إثبات ملكية بـ DNS TXT).',
-'net':'🌍 تحليل الشبكات وعناوين IP\nاكتشاف الأجهزة والخدمات والبورتات، للأهداف المصرح بها بس.\n\n• Nmap: أشهر 100 بورت ونسخ الخدمات — /scan nmap دومين.\n• Recon شامل: نطاقات فرعية وبورتات وشهادات وتقنيات (subfinder وdnsx وnaabu وtlsx وcdncheck وkatana وgau وwafw00f) — /scan recon دومين.\n• بيانات IP العامة: بورتات وثغرات أي عنوان من Shodan InternetDB (من الزر اللي تحت).\n• تحليل PCAP: ابعت ملف تسجيل شبكة وأطلعلك ملخص البروتوكولات والاتصالات (من زر Wireshark تحت).\n• بحث مؤشر: /ioc وبعده عنوان IP.',
-'threat':'🧬 استخبارات التهديدات\nحوادث ومؤشرات تهديد من مصادر رسمية عامة (HIBP وCISA KEV وMITRE ATT&CK وFeodo وOpenPhish وغيرها).\n\n• آخر الحوادث: أحدث الحوادث المسجلة مع المصدر والتاريخ.\n• تحديث البيانات: جلب جديد من كل المصادر دلوقتي.\n• مؤشرات التهديد: دوّر بـ IP أو دومين أو رابط أو CVE في المؤشرات المحلية (من زر مؤشرات التهديد تحت).\n• تقنيات MITRE ATT&CK: اكتب اسم تقنية أو رقمها وأجيبلك وصفها (من الزر اللي تحت).\n• خط زمني: /timeline وبعده سنة أو اسم جهة.',
-'cve':'🐛 الثغرات الأمنية CVE\nCVE هو الرقم التعريفي العالمي لأي ثغرة أمنية معلنة.\n\n• بحث برقم CVE: اكتب الرقم وأدوّر في قاعدة الثغرات المستغلة فعلياً (CISA KEV) والحوادث والمؤشرات (من الزر اللي تحت).\n• الثغرات المستغلة فعلياً: بتظهر ضمن آخر الحوادث.\n• بحث عام: /search وبعده رقم الثغرة أو اسم المنتج.\n\n⚠️ تحليل درجات الخطورة CVSS واحتمالية الاستغلال EPSS بشكل تفصيلي لسه قيد التطوير — المتاح دلوقتي البحث في KEV والحوادث والمؤشرات المحلية.',
-'forensics':'📁 التحليل الجنائي الرقمي\nتحليل ساكن آمن: أي ملف بيتحلل من غير ما يتشغّل أبداً.\n\n• فحص صورة: بيانات EXIF (بيانات وصفية جوه الصورة) وروابط بحث عكسي (من الزر اللي تحت، أو ابعت الصورة كملف مع /imgcheck).\n• تحليل ملف ساكن: نوع الملف وهاشاته ونصوصه ومؤشرات الخطر (Ghidra وradare2 وYARA — نسخ خفيفة جوه البوت).\n• بيانات الملفات الوصفية: ExifTool للمستندات وملفات PDF والأرشيفات.\n• تحليل لوجات: مطابقة أسطر اللوج على قواعد كشف شائعة (Sigma وWazuh — نسخ خفيفة).\n• فحص مكتبات: ابعت محتوى requirements.txt أو package.json وأفحصه في قاعدة ثغرات OSV (Trivy).\n• أدوات الصور والتحقق: فئة كاملة بأدواتها (من الزر اللي تحت).',
+'net':'🌍 تحليل الشبكات وعناوين IP\nاكتشاف الأجهزة والخدمات والبورتات، للأهداف المصرح بها بس.\n\n• Nmap: أشهر 100 بورت ونسخ الخدمات — /scan nmap دومين.\n• Recon شامل: نطاقات فرعية وبورتات وشهادات وتقنيات (subfinder وdnsx وnaabu وtlsx وcdncheck وkatana وgau وwafw00f) — /scan recon دومين.\n• بيانات IP العامة: بورتات وثغرات أي عنوان من Shodan InternetDB (من الزر اللي تحت).\n• تحليل PCAP حقيقي على GitHub Actions: tshark (Wireshark) وZeek وSuricata — ابعت ملف .pcap واختار الأداة من أزرار القسم.\n• بحث مؤشر: /ioc وبعده عنوان IP.',
+'threat':'🧬 استخبارات التهديدات\nحوادث ومؤشرات تهديد من مصادر رسمية عامة (HIBP وCISA KEV وMITRE ATT&CK وFeodo وOpenPhish وغيرها).\n\n• آخر الحوادث: أحدث الحوادث المسجلة مع المصدر والتاريخ.\n• تحديث البيانات: جلب جديد من كل المصادر دلوقتي.\n• مؤشرات التهديد: دوّر بـ IP أو دومين أو رابط أو CVE في خلاصات محلية محدثة (Feodo وOpenPhish وCISA KEV). منصات زي MISP وOpenCTI محتاجة سيرفر خاص بيك — البوت بيبحث في خلاصاتها العامة بس.\n• تقنيات MITRE ATT&CK: اكتب اسم تقنية أو رقمها وأجيبلك وصفها (من الزر اللي تحت).\n• خط زمني: /timeline وبعده سنة أو اسم جهة.',
+'cve':'🐛 الثغرات الأمنية CVE\nCVE هو الرقم التعريفي العالمي لأي ثغرة أمنية معلنة.\n\n• بحث برقم CVE: اكتب الرقم وأدوّر في قائمة CISA KEV للثغرات المستغلة فعليا، ولو مش فيها أجيب بياناتها من NVD (من الزر اللي تحت).\n• الثغرات المستغلة فعلياً: بتظهر ضمن آخر الحوادث.\n• بحث عام: /search وبعده رقم الثغرة أو اسم المنتج.\n\n⚠️ تحليل درجات الخطورة CVSS واحتمالية الاستغلال EPSS بشكل تفصيلي لسه قيد التطوير — المتاح دلوقتي البحث في KEV والحوادث والمؤشرات المحلية.',
+'forensics':'📁 التحليل الجنائي الرقمي\nتحليل ساكن آمن: أي ملف بيتحلل من غير ما يتشغّل أبداً.\n\n• فحص صورة: بيانات EXIF (بيانات وصفية جوه الصورة) وروابط بحث عكسي (من الزر اللي تحت، أو ابعت الصورة كملف مع /imgcheck).\n• تحليل ملفات حقيقي على GitHub Actions: radare2 (rabin2) للملفات التنفيذية، وYARA بقواعد عامة، وExifTool للبيانات الوصفية — ابعت الملف والأداة تشتغل عليه بره البوت وتيجيك النتيجة.\n• تحليل ساكن خفيف فوري جوه البوت (Ghidra): هاشات وأقسام ودوال مستوردة لأي ملف تبعته.\n• تحليل لوجات: مطابقة أسطر اللوج على قواعد كشف شائعة (Sigma وWazuh — نسخ خفيفة).\n• فحص مكتبات: ابعت محتوى requirements.txt أو package.json وأفحصه في قاعدة ثغرات OSV (Trivy).\n• أدوات الصور والتحقق: فئة كاملة بأدواتها (من الزر اللي تحت).',
 'github':'🐙 أدوات GitHub\nبيانات عامة عبر الـ API الرسمي، من غير تسجيل دخول.\n\n• قائمة أدوات جيت هب التفاعلية: حسابات ومستودعات وآخر تعديلات وفحص أسماء ملفات حساسة (من الزر الأول تحت).\n• /gh وبعده user أو repos أو repo أو commits أو files ثم الاسم — نفس الأدوات بأوامر مباشرة، و/gh myemail لفحص ظهور إيميلك في مستودعاتك.\n• فحص كود مستودعك: /codescan بيشغّل Semgrep وTrivy وGitleaks وBandit وغيرهم على مستودع dark-osint-hub-bot ويرجعلك أعداد بس، من غير ما يعرض أي أسرار.\n• فحص أسرار: ابعت نص أو ملف كود وأفحصه عن مفاتيح مكشوفة (بعرض النوع ورقم السطر بس).',
 'monitor':'📡 مركز المراقبة والتنبيهات\n⚠️ المراقبة المجدولة والتنبيهات التلقائية (تغيّر سجلات DNS، وقرب انتهاء شهادات SSL، وثغرات CVE جديدة على أصولك المسجلة) لسه قيد التطوير.\n\nالمتاح فعلياً دلوقتي:\n• /jobs — حالة مهام الفحص على GitHub Actions.\n• /status — حالة آخر الفحوصات.\n• /updates — تحديث قواعد الحوادث والمؤشرات من مصادرها دلوقتي.\n• /incidents — آخر الحوادث المسجلة.\n• /timeline — خط زمني للحوادث بسنة أو اسم جهة.',
 'ai':'🤖 المساعد الذكي\nاسأل بلغتك العادية، عربي أو إنجليزي، والمساعد هيفهم قصدك ويرشحلك الأداة المناسبة من أدوات البوت، ويشرحلك النتائج ويقترح توصيات دفاعية.\n\n• اكتب سؤالك مباشرة في الشات من غير أي أمر.\n• أو استخدم /ask وبعده سؤالك.\n• المحادثة بتتحفظ، فالمساعد فاكر سياق كلامك.\n• المساعد مش بينفذ فحوص نشطة لوحده: أي فحص بيتم من أقسام الفحص وبعد اعتماد الهدف.',
@@ -664,6 +682,33 @@ def main():
         except Exception as e: print('poll err',type(e).__name__,flush=True); time.sleep(5)
 SECRET=os.environ.get('WEBHOOK_SECRET','')
 READY=threading.Event()
+def doc_handle(m):
+    import an
+    d0=m['document']; cid=m['chat']['id']
+    if (d0.get('file_size') or 0)>20000000: send(cid,'الملف أكبر من 20 ميجا (حد تيليجرام للبوتات).'); return
+    try:
+        fi=call('getFile',{'file_id':d0['file_id']})['result']
+        data=urllib.request.urlopen('https://api.telegram.org/file/bot'+TOKEN+'/'+fi['file_path'],timeout=90).read()
+        armed=AN.get(cid)
+        if armed in an.FILE_TOOLS:
+            AN.pop(cid,None); tool_id,_prompt,cap=an.FILE_TOOLS[armed]
+            if len(data)>cap: send(cid,'الملف أكبر من الحد (%d ميجا) لأدوات الملفات.'%(cap//1000000)); return
+            send(cid,'⏳ برفع الملف وأشغّل الأداة الحقيقية على GitHub Actions...')
+            ref=an.gh_upload_file(data, d0.get('file_name') or 'file.bin')
+            if not ref: send(cid,'تعذر رفع الملف لـ GitHub دلوقتي، جرب تاني بعد شوية.'); return
+            e=an.dispatch_files(tool_id, ref, d0.get('file_name') or 'file.bin'); send(cid, e or '🚀 بدأ التحليل على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق. /jobs للمتابعة.'); return
+        if armed=='Sigma' and (d0.get('file_name') or '').lower().endswith(('.yml','.yaml')):
+            AN.pop(cid,None); cap=2000000
+            if len(data)>cap: send(cid,'الملف أكبر من الحد (%d ميجا) لأدوات الملفات.'%(cap//1000000)); return
+            send(cid,'⏳ برفع الملف وأشغّل الأداة الحقيقية على GitHub Actions...')
+            ref=an.gh_upload_file(data, d0.get('file_name') or 'file.bin')
+            if not ref: send(cid,'تعذر رفع الملف لـ GitHub دلوقتي، جرب تاني بعد شوية.'); return
+            e=an.dispatch_files('sigma', ref, d0.get('file_name') or 'file.bin'); send(cid, e or '🚀 بدأ التحليل على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق. /jobs للمتابعة.'); return
+        import imgx
+        if imgx.kind(data): AN.pop(cid,None); return img_check(cid,m,data,'image/jpeg',True)
+        fn=AN.pop(cid,'Ghidra'); send_rep(cid,fn,d0.get('file_name',''),an.RUN.get(fn,an.RUN['Ghidra'])[0](data,d0.get('file_name','')))
+    except Exception as e: send(cid,'تعذر تحليل الملف الآن، حاول مرة أخرى.'); print('an err',type(e).__name__,flush=True)
+    return
 def process(u):
     READY.wait(150)
     cb=u.get('callback_query')
@@ -680,23 +725,17 @@ def process(u):
         return
     m=u.get('message') or {}
     if m.get('from',{}).get('id')!=OWNER or m.get('chat',{}).get('type')!='private': return
+    import an
+    chat_id=m['chat']['id']
+    if m.get('document') and (AN.get(chat_id) in an.FILE_TOOLS or (AN.get(chat_id)=='Sigma' and (m['document'].get('file_name') or '').lower().endswith(('.yml','.yaml')))):
+        doc_handle(m); return
     isimg=m.get('photo') or (m.get('document') and (m['document'].get('mime_type') or '').startswith('image/'))
     if isimg:
         try: img_check(m['chat']['id'],m)
         except Exception as e: send(m['chat']['id'],'تعذر فحص الصورة الآن، حاول مرة أخرى.'); print('img err',type(e).__name__,flush=True)
         return
-    if m.get('document'):
-        import an
-        d0=m['document']; cid=m['chat']['id']
-        if (d0.get('file_size') or 0)>20000000: send(cid,'الملف أكبر من 20 ميجا (حد تيليجرام للبوتات).'); return
-        try:
-            fi=call('getFile',{'file_id':d0['file_id']})['result']
-            data=urllib.request.urlopen('https://api.telegram.org/file/bot'+TOKEN+'/'+fi['file_path'],timeout=90).read()
-            import imgx
-            if imgx.kind(data): AN.pop(cid,None); return img_check(cid,m,data,'image/jpeg',True)
-            fn=AN.pop(cid,'Ghidra'); send_rep(cid,fn,d0.get('file_name',''),an.RUN.get(fn,an.RUN['Ghidra'])[0](data,d0.get('file_name','')))
-        except Exception as e: send(cid,'تعذر تحليل الملف الآن، حاول مرة أخرى.'); print('an err',type(e).__name__,flush=True)
-        return
+    elif m.get('document'):
+        doc_handle(m); return
     if not m.get('text'): send(m['chat']['id'],'أستقبل أوامر نصية وصورا فقط. اكتب /help لعرض الأوامر.'); return
     try: handle(m['chat']['id'],m['text'])
     except Exception as e: send(m['chat']['id'],'تعذر تنفيذ الأمر الآن، حاول بعد دقيقة. إن تكرر استخدم /help'); print('handler err',type(e).__name__,flush=True)

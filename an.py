@@ -161,9 +161,7 @@ def meta(d,fname=''):
     elif k=='elf': L+=elf(d)[0][:3]
     L.append('للصور استخدم 📷 افحص صورة (EXIF كامل).')
     return '\n'.join(L)
-RUN={'Ghidra':(analyze,'ابعتلي الملف المشبوه كملف (📎 File، حتى 20 ميجا). هحلله ساكن من غير ما أشغله وأديك الخلاصة.'),
-     'radare2':(analyze,'ابعتلي الملف التنفيذي كملف (📎 File، حتى 20 ميجا). هحلله ساكن من غير تشغيل وأديك الخلاصة.'),
-     'ExifTool':(meta,'ابعتلي أي ملف (مستند أو PDF أو أرشيف) كملف (📎 File) وأطلعلك بياناته. للصور استخدم 📷 افحص صورة.')}
+RUN={'Ghidra':(analyze,'ابعتلي الملف كملف (📎 File، حتى 20 ميجا). هعمل تحليل ساكن خفيف جوه البوت (هاشات وأقسام ودوال مستوردة ونصوص) من غير ما أشغله. Ghidra الكامل محتاج جهازك؛ تحليل الهندسة العكسية الحقيقي المتاح هنا هو radare2 (rabin2 على GitHub Actions).')}
 import urllib.request,json
 def _get(u,t=20):
     return urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'osint-hub-bot'}),timeout=t).read()
@@ -202,24 +200,23 @@ def crtsh(d):
     except Exception: return 'crt.sh مش بيرد دلوقتي، جرب بعد شوية.'
     s=sorted({x.strip().lstrip('*.') for r in rows for x in r.get('name_value','').split('\n') if x.strip().endswith(d)})
     return '🧭 النطاقات الفرعية من شهادات SSL العلنية لـ %s (المصدر crt.sh، بدون أي فحص مباشر)\nالعدد: %d\n'%(d,len(s))+'\n'.join('• '+x for x in s[:60])+('\n... والباقي مقطوع' if len(s)>60 else '')
-TXT={'Have I Been Pwned':('pwned','ابعتلي الباسورد (أو SHA-1 بتاعه) أفحصه في تسريبات معروفة. بيتبعت أول 5 حروف من الهاش بس. يفضل تجرب باسورد قديم، ومسح الرسالة بعدها.'),
- 'CISA KEV Catalog':('ioc','اكتب رقم ثغرة CVE (مثال: CVE-2021-44228) أو IP أو دومين، وأدوّر في قاعدة الحوادث والمؤشرات المحلية.'),
- 'MISP':('ioc','اكتب IP أو دومين أو رابط أو CVE وأدوّر في مؤشرات التهديد المحلية (Feodo وOpenPhish وKEV).'),
- 'OpenCTI':('ioc','اكتب IP أو دومين أو رابط أو CVE وأدوّر في مؤشرات التهديد المحلية.'),
+TXT={'Have I Been Pwned':('pwned','ابعتلي الباسورد (أو SHA-1 بتاعه) أفحصه في تسريبات معروفة. بيتبعت أول 5 حروف من الهاش بس. يفضل تجرب باسورد قديم، ومسح الرسالة بعدها. (ده فحص باسوردات بس — فحص تسريب إيميل معين محتاج مفتاح HIBP مدفوع ومش مضاف.)'),
+'CISA KEV Catalog':('kev','اكتب رقم ثغرة CVE (مثال: CVE-2021-44228) وأدوّر عليها في قائمة CISA KEV للثغرات المستغلة فعليا، ولو مش موجودة فيها أجيبلك بياناتها من NVD.'),
+'MISP':('ioc','اكتب IP أو دومين أو رابط أو CVE وأدوّر في مؤشرات التهديد المحلية (Feodo وOpenPhish وCISA KEV). ملحوظة: دي مش نسخة MISP شغالة — MISP منصة محتاجة سيرفر خاص بيك، والبحث هنا بيغطي الخلاصات العامة المحلية بس.'),
+'OpenCTI':('ioc','اكتب IP أو دومين أو رابط أو CVE وأدوّر في مؤشرات التهديد المحلية (Feodo وOpenPhish وCISA KEV). ملحوظة: دي مش نسخة OpenCTI شغالة — OpenCTI منصة محتاجة سيرفر خاص بيك.'),
  'MITRE ATT&CK Navigator':('attack','اكتب اسم تقنية أو رقمها (مثال: T1059 أو phishing) وأجيبلك وصفها من MITRE ATT&CK.'),
- 'VirusTotal':('ioc','اكتب IP أو دومين أو رابط أو CVE وأدوّر في المؤشرات المحلية. لسمعة ملف: ابعته كملف وأديك SHA-256 تبحث بيه.'),
- 'Shodan':('idb','اكتب عنوان IP وأجيبلك بياناته العامة المفهرسة (بورتات وثغرات معروفة).'),
- 'Censys':('idb','اكتب عنوان IP وأجيبلك بياناته العامة المفهرسة (بورتات وثغرات معروفة).'),
+'VirusTotal':('ioc','اكتب IP أو دومين أو رابط أو CVE وأدوّر في مؤشرات التهديد المحلية (Feodo وOpenPhish وKEV — دي مش بيانات VirusTotal نفسها). سمعة ملف من VirusTotal مباشرة محتاجة مفتاح API مش مضاف على البوت؛ ابعت أي ملف لأدوات تحليل الملفات وهتاخد SHA-256 تبحث بيه على virustotal.com.'),
+'Shodan':('idb','اكتب عنوان IP وأجيبلك بياناته العامة المفهرسة من Shodan InternetDB (بورتات وثغرات معروفة) — دي بيانات Shodan المجانية من غير مفتاح.'),
+'Censys':('censys','⚠️ Censys مش متاح فعليا على البوت: الخدمة محتاجة حساب ومفتاح API خاص، ومفيش مفتاح مضاف حاليا. اكتب أي رد وهأكدلك الحالة، أو ارجع واستخدم Shodan لبيانات IP مجانية حقيقية.'),
  'Nikto':('dom','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). هعمل فحص سلبي لترويسات الأمان وأديك درجة ونصايح.'),
  'OWASP ZAP':('dom','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). هعمل فحص سلبي لترويسات الأمان وأديك درجة ونصايح.'),
  'Nuclei':('dom','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). هعمل فحص سلبي خفيف وأديك درجة ونصايح.'),
- 'theHarvester':('subs','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). هجيبلك النطاقات الفرعية من شهادات SSL العلنية.'),
+'theHarvester':('harv','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). هشغّل theHarvester الحقيقي على GitHub Actions من مصادر عامة لا تحتاج مفاتيح، والنتيجة توصلك هنا.'),
  'Amass':('subs','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). هجيبلك النطاقات الفرعية من شهادات SSL العلنية.'),
  'Maigret':('user','اكتب اسم المستخدم (حروف وأرقام و. و- و_ بس). هدوّر بيه على حسابات علنية بنفس الاسم في أهم 300 موقع عن طريق Maigret على GitHub Actions، والنتيجة توصلك هنا. البحث لأسماء تخصك أو معاك تصريح بفحصها بس.'),
  'subfinder':('subs','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). هجيبلك النطاقات الفرعية من شهادات SSL العلنية.'),
- 'TruffleHog':('sec','ابعت نص أو ملف كود وأفحصه عن مفاتيح وأسرار مكشوفة (بعرض النوع والسطر بس).'),
- 'Semgrep':('sec','ابعت نص أو ملف كود وأفحصه عن مفاتيح وأسرار مكشوفة (بعرض النوع والسطر بس).')}
-RUN['YARA']=(analyze,'ابعتلي الملف كملف (📎 File، حتى 20 ميجا). هفحصه ساكن بأنماط مشبوهة (زي قواعد YARA) من غير تشغيله.')
+'TruffleHog':('sec','ابعت نص أو ملف كود وأفحصه فحص سريع بأنماط أسرار معروفة جوه البوت. فحص TruffleHog الحقيقي بيشتغل على مستودعك من /codescan.'),
+'Semgrep':('sec','ابعت نص أو ملف كود وأفحصه فحص سريع بأنماط أسرار معروفة جوه البوت (نوع المؤشر ورقم السطر بس). فحص Semgrep الحقيقي بيشتغل على مستودعك من /codescan.')}
 RUN['TruffleHog']=(secrets,TXT['TruffleHog'][1]); RUN['Semgrep']=(secrets,TXT['Semgrep'][1])
 import collections,socket as _s
 def pcap(d,fname=''):
@@ -308,30 +305,34 @@ def sigma(d,fname=''):
         if len(ms)>=th: hit+=1; L.append('🔴 %s: %d سطر\n   مثال: %s'%(nm,len(ms),ms[0][:110]))
     L.append('\n'+('🟡 %d قاعدة اتطابقت، راجع الأسطر دي.'%hit if hit else '🟢 مفيش تطابق مع القواعد الأساسية (دي قواعد قليلة ومش بديل لـ SIEM كامل).'))
     return '\n'.join(L)
-RUN['Wireshark']=(pcap,'ابعتلي ملف تسجيل شبكة (.pcap أو .pcapng) كملف (📎 File، حتى 20 ميجا) وأطلعلك ملخص: البروتوكولات وأكثر الأجهزة اتصالا وDNS وبورتات مريبة.')
-RUN['Zeek']=RUN['Wireshark']; RUN['Suricata']=RUN['Wireshark']
 RUN['Trivy']=(trivy,'ابعتلي محتوى requirements.txt (مكتبة==نسخة) أو package.json كنص أو ملف، وأفحص المكتبات في قاعدة ثغرات OSV.')
-RUN['Sigma']=(sigma,'ابعتلي أسطر لوج كنص أو ملف (SSH أو ويندوز أو ويب)، وأطابقها على قواعد كشف شائعة.')
-RUN['Wazuh']=(sigma,'ابعتلي أسطر لوج كنص أو ملف، وأعمل عليها مراقبة وكشف بقواعد أساسية (نسخة خفيفة من Wazuh).')
-RUN['Volatility 3']=(analyze,'ابعتلي ملف (حتى 20 ميجا) وأعمل فرز جنائي خفيف: نوعه وهاشاته ونصوصه وروابطه. تحليل ذاكرة كامل مش ممكن على السيرفر المجاني.')
-RUN['Autopsy']=RUN['Volatility 3']
-TXT['OpenVAS / Greenbone']=('dom','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). مفيش فحص ثغرات نشط، هعمل فحص سلبي لترويسات الأمان وأديك درجة ونصايح.')
-INEXTRA={'EXIF.tools':'فحص EXIF من 📷 افحص صورة','InVID-WeVerify':None,'Nmap':'/scan nmap دومين معتمد (على GitHub Actions)'}
+RUN['Sigma']=(sigma,'ابعت أسطر لوج كنص أو ملف (.txt) لفحص سريع بقواعد أساسية، أو ابعت ملف قاعدة Sigma بصيغة .yml وهشغّل عليها فحص Sigma الحقيقي (sigma-cli: تحقق وتحويل) على GitHub Actions.')
+RUN['Wazuh']=(sigma,'ابعتلي أسطر لوج كنص أو ملف، وأطابقها على قواعد كشف أساسية مدمجة. ملحوظة: دي مش منصة Wazuh الحقيقية — Wazuh منصة SIEM محتاجة سيرفر خاص بيك.')
+RUN['Volatility 3']=(analyze,'ابعتلي ملف (حتى 20 ميجا) وأعمل فرز جنائي خفيف: نوعه وهاشاته ونصوصه وروابطه. صور الذاكرة الحقيقية حجمها بالجيجات وبتعدي حد تيليجرام، فالتحليل الكامل بـ Volatility 3 محتاج جهازك.')
+RUN['Autopsy']=(analyze,'ابعتلي ملف (حتى 20 ميجا) وأعمل فرز جنائي خفيف: نوعه وهاشاته ونصوصه وروابطه. Autopsy نفسه منصة تحليل أقراص رسومية محتاجة جهازك — اللي هنا فرز ملفات خفيف بس.')
+TXT['OpenVAS / Greenbone']=('plat','⚠️ OpenVAS/Greenbone منصة فحص ثغرات محتاجة سيرفر خاص بيك شغالة على طول، ومفيش نسخة سحابية مجانية أقدر أشغّلها من البوت. اكتب أي رد للتأكيد. البدائل الشغالة هنا: /domaincheck لفحص ترويسات أي دومين مصرح بيه، و/scan لفحوص فعلية.')
+INEXTRA={'EXIF.tools':None,'InVID-WeVerify':None,'Nmap':'/scan nmap دومين معتمد (على GitHub Actions)'}
 LAB={'Nmap','OpenVAS / Greenbone','Nuclei','Nikto','OWASP ZAP','Burp Suite','Wazuh','Suricata','Zeek','Volatility 3','Autopsy','CAPE Sandbox','BloodHound','sqlmap','Metasploit Framework','Hashcat','John the Ripper','Hydra','Trivy','MISP','OpenCTI','Ghidra','radare2','Wireshark'}
 NEVER={'Sherlock','Maltego','Recon-ng','SpiderFoot','GeoSpy'}
+PROHIB={'Metasploit Framework','sqlmap','Hashcat','John the Ripper','Hydra'}
+PLAT={'OpenVAS / Greenbone','Burp Suite','CAPE Sandbox','BloodHound'}
 def status(n):
-    if n in RUN or n in TXT or n in INEXTRA and INEXTRA[n]: return 'in'
-    if n in NEVER: return 'never'
+    if n in NEVER or n in PROHIB: return 'never'
+    if n in PLAT: return 'plat'
+    if n in RUN or n in FILE_TOOLS or n in TXT or (n in INEXTRA and INEXTRA[n]): return 'in'
     if n in LAB: return 'lab'
     return 'link'
 def inventory(rows):
-    g={'in':[],'lab':[],'link':[],'never':[]}
+    g={'in':[],'plat':[],'lab':[],'link':[],'never':[]}
     for n,c in rows: g[status(n)].append((n,c))
-    out=['📋 جرد كل أدوات المكتبة (%d أداة)'%len(rows),'']
-    out.append('✅ بتشتغل جوه البوت دلوقتي (نسخة خفيفة، %d):\n'%len(g['in'])+'، '.join(n for n,c in g['in']))
-    out.append('\n🖥 النسخة الكاملة محتاجة سيرفر حقيقي (VPS) وبتشتغل على أجهزتك ودومينات تملكها بس. اللي لسه مش متاح خالص دلوقتي: '+'، '.join(n for n,c in g['lab'])+'\nوالنسخ الكاملة لأدوات ✅ زي Ghidra وWireshark وNmap-مشابهة محتاجة نفس السيرفر.')
-    out.append('\n🔗 روابط فقط (مفيش API مجاني أو شروط الموقع تمنع، %d):\n'%len(g['link'])+'، '.join(n for n,c in g['link']))
-    out.append('\n⛔ مش هتتبني (تتبع أشخاص أو هوية، %d):\n'%len(g['never'])+'، '.join(n for n,c in g['never']))
+    out=['📋 جرد كل أدوات المكتبة (%d أداة)'%len(rows)]
+    if g['in']: out.append('✅ بتشتغل من البوت فعليا — جوه البوت أو على GitHub Actions (%d):\n'%len(g['in'])+'، '.join(n for n,c in g['in']))
+    if g['plat']: out.append('\n🖥 منصات محتاجة سيرفر أو جهاز خاص بيك — مش بتشتغل من البوت، والبوت بيقترح بدائل شغالة (%d):\n'%len(g['plat'])+'، '.join(n for n,c in g['plat']))
+    if g['lab']: out.append('\n🧪 متاحة في المختبر المحلي بس (%d):\n'%len(g['lab'])+'، '.join(n for n,c in g['lab']))
+    if g['link']: out.append('\n🔗 روابط خارجية فقط (مفيش API مجاني رسمي، %d):\n'%len(g['link'])+'، '.join(n for n,c in g['link']))
+    pr=[n for n,c in g['never'] if n in PROHIB]; nv=[n for n,c in g['never'] if n not in PROHIB]
+    if pr: out.append('\n⛔ مش هتتبني — أدوات هجومية أو تخمين/كسر كلمات سر، ممنوعة حسب سياسة البوت (%d):\n'%len(pr)+'، '.join(pr))
+    if nv: out.append('\n⛔ مش هتتبني — تتبع أشخاص وهوية (%d):\n'%len(nv)+'، '.join(nv))
     out.append('\nكل الأدوات للأصول اللي تملكها أو معاك تصريح بيها بس.')
     return '\n'.join(out)
 def _pe():
@@ -476,6 +477,102 @@ def dispatch_osint(username):
     try: urllib.request.urlopen(r,timeout=20); return None
     except urllib.error.HTTPError as e: return 'GitHub رفض تشغيل البحث (كود %d). لازم ملف osint.yml يكون مركب في ريبو الفاحص الأول.'%e.code
     except Exception: return 'تعذر الوصول لـ GitHub الآن.'
+
+# ---- File tools on GitHub Actions (files.yml in osint-scanner) + platform notes + KEV lookup ----
+PLAT_TEXT={'OpenVAS / Greenbone':'⚠️ OpenVAS/Greenbone مش شغال من البوت: دي منصة فحص ثغرات لازم تتثبت على سيرفر خاص بيك وتفضل شغالة، ومفيش تشغيل مجاني لكل طلب. البدائل الشغالة هنا فعلا: /scan nuclei أو /scan zap لدومين معتمد (فحص فعلي على GitHub Actions)، و/domaincheck لفحص الترويسات.'}
+FILE_TOOLS={'Wireshark':('tshark','ابعتلي ملف تسجيل شبكة (.pcap أو .pcapng) كملف (📎 File، حتى 10 ميجا) وهشغّل tshark الحقيقي (بتاع Wireshark) على GitHub Actions: هرمية البروتوكولات وأهم المحادثات واستعلامات DNS وخوادم HTTP وSNI.',10000000),'Zeek':('zeek','ابعتلي ملف تسجيل شبكة (.pcap أو .pcapng) كملف (📎 File، حتى 10 ميجا) وهشغّل Zeek الحقيقي على GitHub Actions وألخصلك سجلات الاتصالات وDNS وHTTP.',10000000),'Suricata':('suricata','ابعتلي ملف تسجيل شبكة (.pcap أو .pcapng) كملف (📎 File، حتى 10 ميجا) وهشغّل Suricata الحقيقي بوضع عدم الاتصال على GitHub Actions وأبعتلك التنبيهات اللي طلعها بقواعده.',10000000),'ExifTool':('exiftool','ابعتلي أي ملف (مستند أو PDF أو أرشيف أو صورة) كملف (📎 File، حتى 10 ميجا) وهشغّل ExifTool الحقيقي على GitHub Actions وأبعتلك البيانات الوصفية كاملة، مع تنبيه واضح لو فيه موقع GPS.',10000000),'YARA':('yara','ابعتلي الملف كملف (📎 File، حتى 10 ميجا). هشغّل YARA الحقيقي بقواعد عامة من مشروع Yara-Rules على GitHub Actions، من غير ما أشغّل الملف أبدا، وأقولك القواعد اللي اتطابقت.',10000000),'radare2':('rabin2','ابعتلي الملف التنفيذي كملف (📎 File، حتى 10 ميجا). هشغّل rabin2 الحقيقي (من radare2) على GitHub Actions: معلومات الملف والدوال المستوردة والنصوص، من غير تشغيل الملف.',10000000)}
+def gh_api_write(method,path,body=None):
+    tok=os.environ.get('GH_ACTIONS_TOKEN','').strip()
+    if not tok: return None
+    data=json.dumps(body).encode() if body is not None else None
+    r=urllib.request.Request('https://api.github.com/repos/%s/%s'%(GH_REPO,path),data=data,headers={'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'},method=method)
+    try:
+        d=urllib.request.urlopen(r,timeout=30).read()
+        return json.loads(d) if d else {}
+    except Exception: return None
+def gh_upload_file(data,filename):
+    import base64
+    try:
+        name=re.sub(r'[^A-Za-z0-9._-]','_',filename or '')[:80] or 'file.bin'
+        ts=int(time.time())
+        path='up/%d-%s/%s'%(ts,os.urandom(3).hex(),name)
+        ref=gh_api('git/ref/heads/tool-uploads')
+        if not ref:
+            main=gh_api('git/ref/heads/main')
+            if not main: return None
+            if gh_api_write('POST','git/refs',{'ref':'refs/heads/tool-uploads','sha':main['object']['sha']}) is None: return None
+            ref=gh_api('git/ref/heads/tool-uploads')
+            if not ref: return None
+        head=ref['object']['sha']
+        commit=gh_api('git/commits/'+head)
+        if not commit: return None
+        blob=gh_api_write('POST','git/blobs',{'content':base64.b64encode(data).decode(),'encoding':'base64'})
+        if not blob: return None
+        tree=gh_api_write('POST','git/trees',{'base_tree':commit['tree']['sha'],'tree':[{'path':path,'mode':'100644','type':'blob','sha':blob['sha']}]})
+        if not tree: return None
+        nc=gh_api_write('POST','git/commits',{'message':'tool upload '+path,'tree':tree['sha'],'parents':[head]})
+        if not nc: return None
+        if gh_api_write('PATCH','git/refs/heads/tool-uploads',{'sha':nc['sha']}) is None: return None
+        try:
+            dirs=gh_api('contents/up?ref=tool-uploads')
+            if isinstance(dirs,list):
+                cutoff=ts-7200
+                for e in dirs:
+                    mm=re.match(r'(\d+)-',e.get('name',''))
+                    if e.get('type')=='dir' and mm and int(mm.group(1))<cutoff:
+                        files=gh_api('contents/up/%s?ref=tool-uploads'%e['name'])
+                        if isinstance(files,list):
+                            for f in files:
+                                gh_api_write('DELETE','contents/up/%s/%s'%(e['name'],f['name']),{'message':'sweep old upload','sha':f['sha'],'branch':'tool-uploads'})
+        except Exception: pass
+        return path
+    except Exception: return None
+def sign_files(tool,ref,ts):
+    k=(os.environ.get('SCAN_KEY') or '').encode()
+    return hmac.new(k,('files|%s|%s|%s'%(tool,ref,ts)).encode(),hashlib.sha256).hexdigest() if k else None
+def dispatch_files(tool,ref,name):
+    tok=os.environ.get('GH_ACTIONS_TOKEN','').strip(); ts=str(int(time.time())); sg=sign_files(tool,ref,ts)
+    if not tok or not sg: return 'تشغيل أدوات الملفات لسه مش متفعل (مفتاح التشغيل أو التوقيع مش مضاف).'
+    body=json.dumps({'ref':'main','inputs':{'tool':tool,'ref':ref,'name':name,'ts':ts,'sig':sg}}).encode()
+    r=urllib.request.Request('https://api.github.com/repos/%s/actions/workflows/files.yml/dispatches'%GH_REPO,body,{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'})
+    try: urllib.request.urlopen(r,timeout=20); return None
+    except urllib.error.HTTPError as e: return 'GitHub رفض تشغيل أداة الملفات (كود %d). لازم ملف files.yml يكون مركب في ريبو الفاحص الأول.'%e.code
+    except Exception: return 'تعذر الوصول لـ GitHub الآن.'
+def kev_lookup(term):
+    from lib import db as _ldb
+    t=(term or '').strip(); cve=t.upper(); link='https://nvd.nist.gov/vuln/detail/'+cve
+    if re.fullmatch(r'CVE-\d{4}-\d{4,}',cve):
+        try: r=_ldb().execute("select * from incidents where source='CISA KEV' and id=?",('kev:'+cve,)).fetchone()
+        except Exception: r=None
+        if r:
+            try: det=json.loads(r['detail'] or '{}')
+            except Exception: det={}
+            L=['🔴 الثغرة %s موجودة في قائمة CISA KEV (مستغلة فعليا)'%cve,'الجهة/المنتج: %s'%(r['company'] if r['company'] not in (None,'unavailable','') else 'غير متاح'),'الاسم: %s'%r['title'],'تاريخ الإضافة لـ KEV: %s'%(r['event_date'] or 'غير متاح')]
+            if det.get('product'): L.append('المنتج المتأثر: %s'%det['product'])
+            if det.get('ransomware_use'): L.append('استخدام في فدية (ransomware): %s'%det['ransomware_use'])
+            if det.get('due_date'): L.append('مهلة الإصلاح للجهات الفيدرالية: %s'%det['due_date'])
+            if det.get('cwes'): L.append('نقاط الضعف (CWE): '+', '.join(str(x) for x in det['cwes']))
+            L.append('التفاصيل في NVD: '+link)
+            return '\n'.join(L)
+        try:
+            j=json.loads(_get('https://services.nvd.nist.gov/rest/json/cves/2.0?cveId='+cve,30))
+            v=j['vulnerabilities'][0]['cve']
+            desc=next((d['value'] for d in v.get('descriptions',[]) if d.get('lang')=='en'),'')
+            score=sev=None
+            for kk in ('cvssMetricV31','cvssMetricV40','cvssMetricV30','cvssMetricV2'):
+                mm=v.get('metrics',{}).get(kk)
+                if mm: score=mm[0]['cvssData'].get('baseScore'); sev=mm[0]['cvssData'].get('baseSeverity') or mm[0].get('baseSeverity'); break
+            L=['الثغرة دي مش موجودة في قائمة CISA KEV المحلية عندنا (آخر تحديث بيبان في /sources) — ده مش معناه إنها آمنة، معناه بس إن CISA لم تدرجها كمستغلة فعليا.','بيانات NVD لـ %s:'%cve]
+            if v.get('published'): L.append('تاريخ النشر: %s'%v['published'][:10])
+            if score is not None: L.append('درجة CVSS: %s (%s)'%(score,sev or 'غير متاح'))
+            if desc: L.append('الوصف: '+desc[:800])
+            L.append('التفاصيل: '+link)
+            return '\n'.join(L)
+        except Exception: return 'مش لاقيها في KEV المحلي، وخدمة NVD مش بترد دلوقتي — جرب بعد شوية.'
+    try: rows=_ldb().execute("select * from incidents where source='CISA KEV' and (title like ? or company like ?) limit 5",('%'+t+'%','%'+t+'%')).fetchall()
+    except Exception: rows=[]
+    if rows: return 'نتائج من قائمة CISA KEV:\n'+'\n'.join('• %s | %s | %s'%(r['title'],r['id'],r['event_date']) for r in rows)
+    return 'اكتب رقم CVE كامل زي CVE-2021-44228.'
 
 # ---- P3/P4: registry-driven commands, jobs, persistent approvals (owner /approve only) ----
 def gh_headers():

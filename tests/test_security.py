@@ -8,9 +8,11 @@ stubbed where a live network call would otherwise be required.
 import json
 import os
 import socket
+import socketserver
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import unittest.mock
@@ -337,6 +339,192 @@ class PinnedAddressTest(unittest.TestCase):
 
 
 # ------------------------------------------------------------------ workflow
+
+
+# ------------------------------------------------------------ external tools
+
+
+class _EchoHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        while True:
+            try:
+                data = self.request.recv(1024)
+            except OSError:
+                return
+            if not data:
+                return
+            self.request.sendall(b'echo:' + data)
+
+
+def _fake_tools(tmp):
+    for name in ('nmap', 'nuclei'):
+        path = os.path.join(tmp, name)
+        with open(path, 'w') as fh:
+            fh.write('#!/bin/sh\nexit 1\n')
+        os.chmod(path, 0o755)
+
+
+class _FakeRecon:
+    def __init__(self):
+        self.ports = []
+        self.tech = []
+        self.pinned_ip = {}
+
+
+class _FakeScanner:
+    def __init__(self, target, scope, opts=None):
+        self.target = target
+        self.scope = scope
+        self.opts = dict({'external_tools': True}, **(opts or {}))
+        self.recon = _FakeRecon()
+        self.coverage = {}
+        self.notes = []
+        self.added = []
+
+    def note(self, text):
+        self.notes.append(text)
+
+    def add(self, finding):
+        self.added.append(finding)
+
+
+class ExternalToolPinningTest(unittest.TestCase):
+    """nmap, nuclei and ZAP must never resolve the target name themselves."""
+
+    TARGET = 'https://shop.example.com/'
+    RESOLVED = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 0))]
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix='tools-')
+        _fake_tools(self.tmp)
+        self.calls = []
+
+    def run_tools(self, scope, target=None):
+        s = _FakeScanner(target or self.TARGET, scope)
+        real = subprocess.run
+
+        def record(argv, **kw):
+            self.calls.append(argv)
+            return subprocess.CompletedProcess(argv, 1, b'', b'')
+
+        env = dict(os.environ, PATH=self.tmp + os.pathsep + os.environ.get('PATH', ''))
+        env.pop('PENTEST_ZAP_JSON', None)
+        with unittest.mock.patch.dict(os.environ, env, clear=False):
+            with unittest.mock.patch('socket.getaddrinfo', return_value=self.RESOLVED):
+                with unittest.mock.patch('subprocess.run', side_effect=record):
+                    pentest.check_external(s)
+        return s
+
+    def test_nmap_scans_the_pinned_ip_not_the_name(self):
+        scope = pentest.Scope(['example.com'])
+        self.run_tools(scope)
+        nmap = [c for c in self.calls if os.path.basename(c[0]) == 'nmap'][0]
+        self.assertEqual(nmap[-1], '93.184.216.34')
+        self.assertNotIn('shop.example.com', nmap)
+        self.assertIn('-n', nmap)          # no reverse lookups either
+
+    def test_nuclei_goes_through_the_allow_list_proxy(self):
+        scope = pentest.Scope(['example.com'])
+        self.run_tools(scope)
+        nuclei = [c for c in self.calls if os.path.basename(c[0]) == 'nuclei'][0]
+        proxy = nuclei[nuclei.index('-proxy') + 1]
+        self.assertRegex(proxy, r'^http://127\.0\.0\.1:\d+$')
+        self.assertEqual(nuclei[nuclei.index('-u') + 1], self.TARGET)
+
+    def test_private_answer_stops_both_tools_before_they_run(self):
+        scope = pentest.Scope(['example.com'], allow_private=False)
+        answers = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.1', 0))]
+        s = _FakeScanner(self.TARGET, scope)
+        with unittest.mock.patch('socket.getaddrinfo', return_value=answers):
+            with unittest.mock.patch('subprocess.run') as run:
+                pentest.check_external(s)
+        run.assert_not_called()
+        self.assertEqual(s.coverage['nmap'], 'failed')
+        self.assertEqual(s.coverage['nuclei'], 'failed')
+        self.assertIn('تعذر تثبيت عنوان', ' '.join(s.notes))
+
+    def test_pinned_address_is_recorded_in_the_report(self):
+        scope = pentest.Scope(['example.com'])
+        s = self.run_tools(scope)
+        self.assertEqual(s.recon.pinned_ip, {'host': 'shop.example.com', 'ip': '93.184.216.34'})
+
+    def test_rebound_answer_is_ignored_after_the_first_pin(self):
+        """A second answer cannot move the scan: the first pin wins."""
+        scope = pentest.Scope(['example.com'])
+        other = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.1', 0))]
+        with unittest.mock.patch('socket.getaddrinfo', return_value=self.RESOLVED):
+            self.assertEqual(scope.pin('shop.example.com'), '93.184.216.34')
+        with unittest.mock.patch('socket.getaddrinfo', return_value=other):
+            self.assertEqual(scope.pin('shop.example.com'), '93.184.216.34')
+
+
+class PinningProxyTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.echo = socketserver.ThreadingTCPServer(('127.0.0.1', 0), _EchoHandler)
+        cls.echo.daemon_threads = True
+        cls.echo_port = cls.echo.server_address[1]
+        threading.Thread(target=cls.echo.serve_forever, kwargs={'poll_interval': 0.05},
+                         daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.echo.shutdown()
+        cls.echo.server_close()
+
+    def exchange(self, proxy, request):
+        with socket.create_connection(('127.0.0.1', proxy.server_address[1]), 5) as conn:
+            conn.sendall(request)
+            return conn.recv(1024)
+
+    def test_tunnels_to_the_pinned_address(self):
+        scope = pentest.Scope(['127.0.0.1'], allow_private=True, allow_ports=(self.echo_port,))
+        with pentest.PinnedProxy(scope) as proxy:
+            with socket.create_connection(('127.0.0.1', proxy.server_address[1]), 5) as conn:
+                conn.sendall(b'CONNECT 127.0.0.1:%d HTTP/1.1\r\n\r\n' % self.echo_port)
+                head = conn.recv(1024)
+                self.assertIn(b'200', head.split(b'\r\n')[0])
+                conn.sendall(b'ping')
+                self.assertEqual(conn.recv(1024), b'echo:ping')
+
+    def test_refuses_a_host_outside_the_scope(self):
+        scope = pentest.Scope(['example.com'], allow_private=True)
+        with pentest.PinnedProxy(scope) as proxy:
+            head = self.exchange(proxy, b'CONNECT evil.test:443 HTTP/1.1\r\n\r\n')
+        self.assertIn(b'403', head.split(b'\r\n')[0])
+
+    def test_refuses_the_metadata_address_even_when_private_is_allowed(self):
+        scope = pentest.Scope(['169.254.169.254'], allow_private=True, allow_ports=(80,))
+        with pentest.PinnedProxy(scope) as proxy:
+            head = self.exchange(proxy, b'CONNECT 169.254.169.254:80 HTTP/1.1\r\n\r\n')
+        self.assertIn(b'403', head.split(b'\r\n')[0])
+
+    def test_refuses_a_blocked_port(self):
+        scope = pentest.Scope(['127.0.0.1'], allow_private=True, allow_ports=(self.echo_port,))
+        with pentest.PinnedProxy(scope) as proxy:
+            head = self.exchange(proxy, b'CONNECT 127.0.0.1:22 HTTP/1.1\r\n\r\n')
+        self.assertIn(b'403', head.split(b'\r\n')[0])
+
+
+class ExternalToolWorkflowTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = Path(os.path.join(ROOT, 'deploy', 'pentest.yml')).read_text()
+
+    def test_private_egress_is_blocked(self):
+        self.assertIn('Block private-network egress', self.text)
+        for net in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',
+                    '169.254.0.0/16', '100.64.0.0/10'):
+            self.assertIn(net, self.text)
+        self.assertIn('iptables -F OUTPUT', self.text)   # cleared before upload
+
+    def test_zap_container_resolves_to_the_pinned_ip(self):
+        self.assertIn('--add-host "$TARGET_HOST:$PINNED_IP"', self.text)
+        self.assertIn('pinned_ip=%s', self.text)
+
+    def test_pin_failure_fails_the_run(self):
+        self.assertIn('cannot pin the target address', self.text)
+
 
 
 class WorkflowHardeningTest(unittest.TestCase):

@@ -409,7 +409,7 @@ def txt_ok(domain):
     except Exception: return None
     vals=[a.get('data','').strip('"') for a in j.get('Answer',[]) or []]
     return ('osint-hub-verify='+proof_code(domain)) in vals
-SCAN_TOOLS={'nmap':'Nmap (أشهر 100 بورت + نسخ الخدمات)','nuclei':'Nuclei (قوالب كشف آمنة)','zap':'OWASP ZAP (فحص سلبي baseline)','nikto':'Nikto (ملفات وإعدادات وكشف معلومات)','ffuf':'ffuf (اكتشاف مسارات مكشوفة بقائمة صغيرة 40 مسار وبطيء، من غير تخمين باسوردات)','recon':'Recon شامل (subfinder وdnsx وnaabu وtlsx وcdncheck وkatana وgau وwafw00f)','testssl':'testssl.sh (فحص TLS والشهادات والتشفير)','httpx':'httpx (كشف المضيف الحي والتقنيات والسيرفر)'}
+SCAN_TOOLS={'nmap':'Nmap (أشهر 100 بورت + نسخ الخدمات)','nuclei':'Nuclei (قوالب كشف آمنة)','zap':'OWASP ZAP (فحص سلبي baseline)','nikto':'Nikto (ملفات وإعدادات وكشف معلومات)','ffuf':'ffuf (اكتشاف مسارات مكشوفة بقائمة صغيرة 40 مسار وبطيء، من غير تخمين باسوردات)','recon':'Recon شامل (subfinder وdnsx وnaabu وtlsx وcdncheck وkatana وgau وwafw00f)','testssl':'testssl.sh (فحص TLS والشهادات والتشفير)','httpx':'httpx (كشف المضيف الحي والتقنيات والسيرفر)','wpscan':'WPScan (فحص ووردبريس دفاعي: إصدار النواة والإضافات والقوالب والثغرات المعروفة وملفات الإعدادات الاحتياطية المكشوفة — كشف سلبي بس، من غير تخمين باسوردات ولا حصر مستخدمين. بيانات الثغرات أكمل بتوكن WPScan المجاني)'}
 def verify_text(domain):
     return ('🔐 إثبات ملكية %s (لازم قبل أي فحص نشط)\nأضف سجل DNS من نوع TXT:\nالاسم: _osint-hub.%s\nالقيمة: osint-hub-verify=%s\nبعد ما يتفعل (ممكن ياخد دقايق) اكتب: /verifydomain check %s'%(domain,domain,proof_code(domain),domain))
 import time

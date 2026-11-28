@@ -59,6 +59,8 @@ KIND_CARD={
  'attack':('بيجيب وصف تقنية هجوم من MITRE ATT&CK','اسم أو رقم تقنية (مثال: T1059 أو phishing)','وصف التقنية + التكتيكات والمنصات','مش محتاج','مفيش'),
  'harv':('بيشغّل theHarvester لجمع بيانات عامة عن الدومين','دومين معتمد','إيميلات ونطاقات فرعية ومضيفين من مصادر عامة','مش محتاج (مصادر لا تحتاج مفاتيح)','لازم الدومين يكون معتمد'),
  'censys':('خدمة بحث في أصول الإنترنت والشهادات (مش متاحة)','—','الخدمة مش متاحة على البوت','محتاج مفتاح API خاص — مش مضاف','—'),
+ 'ti_abuse':('بيجيب سمعة عنوان IP من AbuseIPDB','عنوان IPv4','درجة خطورة 0–100 + بلاغات إساءة وآخر بلاغ والشركة والدولة','محتاج مفتاح API مجاني (ABUSEIPDB_API_KEY) — الحد المجاني 1000 فحص/يوم','مفيش'),
+ 'ti_otx':('بيجيب تقارير التهديد المجتمعية (Pulses) المرتبطة بالمؤشر من AlienVault OTX','IP أو دومين أو هاش ملف (MD5/SHA-1/SHA-256)','تقارير Pulses المرتبطة + درجة السمعة','محتاج مفتاح API مجاني (OTX_API_KEY) — حساب مجاني بحدود سخية','مفيش'),
  'plat':('منصة فحص ثغرات (مش بتشتغل من البوت)','—','المنصة مش بتشتغل من البوت','—','محتاج سيرفر خاص بيك'),
 }
 RUN_CARD={
@@ -79,7 +81,7 @@ FILE_CARD={
  'YARA':('بيشغّل YARA الحقيقي بقواعد عامة على الملف من غير ما يشغّله','أي ملف (حتى 10 ميجا)','القواعد اللي اتطابقت (Yara-Rules)','مش محتاج','مفيش — ابعت ملفات تخصك بس'),
  'radare2':('بيشغّل rabin2 الحقيقي (من radare2) على الملف التنفيذي من غير ما يشغّله','ملف تنفيذي (حتى 10 ميجا)','معلومات الملف والدوال المستوردة والنصوص','مش محتاج','مفيش — ابعت ملفات تخصك بس'),
 }
-KEY_OVERRIDE={'VirusTotal':'البحث المباشر في VirusTotal محتاج مفتاح API — مش مضاف؛ البحث هنا في القواعد المحلية بس'}
+KEY_OVERRIDE={'VirusTotal':'البحث الحي في VirusTotal من /ioc محتاج مفتاح API مجاني — من غيره البحث في القواعد المحلية بس'}
 def tool_intro(name):
     import an
     if name in an.TXT: k=an.TXT[name][0]; prompt=an.TXT[name][1]; where='جوه البوت (فوري)'
@@ -195,7 +197,19 @@ def an_text(chat,t):
     if k=='ioc': return handle(chat,'/ioc '+t)
     if k=='dom': return handle(chat,'/domaincheck '+t)
     if k=='pwned': return send(chat,an.pwned(t))
-    if k=='idb': return send(chat,an.internetdb(t))
+    if k=='ti_abuse':
+        import ti
+        if not ti.configured()['abuseipdb']: return send(chat,ti.not_configured('abuseipdb'))
+        return send(chat,ti.abuseipdb(t) or ti.not_configured('abuseipdb'))
+    if k=='ti_otx':
+        import ti
+        if not ti.configured()['otx']: return send(chat,ti.not_configured('otx'))
+        return send(chat,ti.otx_auto(t) or ti.not_configured('otx'))
+    if k=='idb':
+        base=an.internetdb(t)
+        import ti
+        secs=ti.ip_sections(t)
+        return send(chat,base+('\n\n'+'\n\n'.join(secs) if secs else ''))
     if k=='sec': return send(chat,an.secrets(t.encode()))
     if k=='user': return handle(chat,'/username '+t)
     if k=='attack':
@@ -716,6 +730,9 @@ def handle(chat,text):
         a=a[:300]
         for r in c.execute('select * from indicators where value=? or value like ? limit 10',(a,'%'+a+'%')): out.append('⚠️ %s (%s) | %s | أول ظهور: %s | الحالة: %s | جُلب: %s'%(r['value'],r['type'],r['source'],A(r['first_seen']),r['status'],r['fetched_at']))
         for r in c.execute('select * from incidents where id like ? or title=?',('%'+a.upper()+'%',a.upper())): out.append(line(r))
+        import ti
+        secs=ti.ioc_sections(a)
+        if secs: return send(chat,('\n'.join(out)+'\n\n' if out else '')+'\n\n'.join(secs))
         return send(chat,'\n'.join(out) if out else 'لا نتيجة في المصادر المحلية (لا يعني أنه آمن).')
     send(chat,'أمر غير معروف.\n\n'+HELP)
 def main():

@@ -195,6 +195,24 @@ def internetdb(ip):
     except Exception: return 'الخدمة مش متاحة دلوقتي.'
     L=['🌍 بيانات عامة عن %s (من Shodan InternetDB، بيانات مفهرسة مسبقا، مفيش فحص مباشر مني)'%ip,'بورتات مفتوحة: '+(', '.join(map(str,j.get('ports',[]))) or 'غير متاح'),'أسماء مضيفين: '+(', '.join(j.get('hostnames',[])[:8]) or 'غير متاح'),'وسوم: '+(', '.join(j.get('tags',[])) or '-'),'ثغرات معروفة مرتبطة: '+(', '.join(j.get('vulns',[])[:10]) or 'غير متاح')]
     return '\n'.join(L)+'\nالمصدر: https://internetdb.shodan.io/'+ip
+def whois_rdap(d):
+    try: j=json.loads(_get('https://rdap.org/domain/'+d,15))
+    except Exception: return None
+    reg=None
+    for e in j.get('entities',[]):
+        if 'registrar' in (e.get('roles') or []):
+            try:
+                for it in e.get('vcardArray',[None,[]])[1]:
+                    if it and it[0]=='fn': reg=it[3]; break
+            except Exception: pass
+    ev={}
+    for e in j.get('events',[]):
+        if e.get('eventAction')=='registration': ev['اتسجل']=(e.get('eventDate') or '')[:10]
+        if e.get('eventAction')=='expiration': ev['ينتهي']=(e.get('eventDate') or '')[:10]
+    if not reg and not ev: return None
+    L=['• WHOIS (RDAP): المسجّل: %s'%(reg or 'غير متاح')]
+    if ev: L.append('  '+' | '.join('%s: %s'%(k,v) for k,v in ev.items()))
+    return '\n'.join(L)
 def crtsh(d):
     try: rows=json.loads(_get('https://crt.sh/?q=%25.'+d+'&output=json',40))
     except Exception: return 'crt.sh مش بيرد دلوقتي، جرب بعد شوية.'
@@ -205,7 +223,9 @@ TXT={'Have I Been Pwned':('pwned','ابعتلي الباسورد (أو SHA-1 ب�
 'MISP':('ioc','اكتب IP أو دومين أو رابط أو CVE وأدوّر في مؤشرات التهديد المحلية (Feodo وOpenPhish وCISA KEV). ملحوظة: دي مش نسخة MISP شغالة — MISP منصة محتاجة سيرفر خاص بيك، والبحث هنا بيغطي الخلاصات العامة المحلية بس.'),
 'OpenCTI':('ioc','اكتب IP أو دومين أو رابط أو CVE وأدوّر في مؤشرات التهديد المحلية (Feodo وOpenPhish وCISA KEV). ملحوظة: دي مش نسخة OpenCTI شغالة — OpenCTI منصة محتاجة سيرفر خاص بيك.'),
  'MITRE ATT&CK Navigator':('attack','اكتب اسم تقنية أو رقمها (مثال: T1059 أو phishing) وأجيبلك وصفها من MITRE ATT&CK.'),
-'VirusTotal':('ioc','اكتب IP أو دومين أو رابط أو CVE وأدوّر في مؤشرات التهديد المحلية (Feodo وOpenPhish وKEV — دي مش بيانات VirusTotal نفسها). سمعة ملف من VirusTotal مباشرة محتاجة مفتاح API مش مضاف على البوت؛ ابعت أي ملف لأدوات تحليل الملفات وهتاخد SHA-256 تبحث بيه على virustotal.com.'),
+'VirusTotal':('ioc','اكتب IP أو دومين أو هاش ملف وأدوّر في مؤشرات التهديد المحلية (Feodo وOpenPhish وKEV). ولو مفتاح VirusTotal المجاني مضاف على البوت (VIRUSTOTAL_API_KEY) هضمّ النتيجة الحية من VirusTotal نفسه — الحد المجاني 500 طلب/يوم و4 طلبات/دقيقة، والبوت بيخزن النتائج مؤقتا عشان ميحرقش الحد.'),
+'AbuseIPDB':('ti_abuse','اكتب عنوان IP وأجيبلك سمعته من AbuseIPDB: درجة خطورة من 0 لـ 100 وعدد بلاغات الإساءة وآخر بلاغ والشركة والدولة. محتاج مفتاح API مجاني مضاف على البوت (ABUSEIPDB_API_KEY) — الحد المجاني 1000 فحص/يوم. من غير المفتاح الأداة هتقولك إنها مش مفعّلة.'),
+'AlienVault OTX':('ti_otx','اكتب IP أو دومين أو هاش ملف (MD5/SHA-1/SHA-256) وأجيبلك تقارير التهديد المجتمعية (Pulses) المرتبطة بيه من AlienVault OTX. محتاج مفتاح API مجاني (OTX_API_KEY) — الحساب المجاني حدوده سخية والبوت حاطط لنفسه حد محافظ. من غير المفتاح الأداة هتقولك إنها مش مفعّلة.'),
 'Shodan':('idb','اكتب عنوان IP وأجيبلك بياناته العامة المفهرسة من Shodan InternetDB (بورتات وثغرات معروفة) — دي بيانات Shodan المجانية من غير مفتاح.'),
 'Censys':('censys','⚠️ Censys مش متاح فعليا على البوت: الخدمة محتاجة حساب ومفتاح API خاص، ومفيش مفتاح مضاف حاليا. اكتب أي رد وهأكدلك الحالة، أو ارجع واستخدم Shodan لبيانات IP مجانية حقيقية.'),
  'Nikto':('dom','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). هعمل فحص سلبي لترويسات الأمان وأديك درجة ونصايح.'),
@@ -456,6 +476,8 @@ def passive(d):
         j=json.loads(_get('https://crt.sh/?q=%25.'+d+'&output=json',25)); s=sorted({n.strip().lstrip('*.') for r in j for n in r.get('name_value','').split('\n')})
         out.append('• نطاقات فرعية من شهادات الشفافية (crt.sh، %d): %s'%(len(s),', '.join(s[:12])+(' ...' if len(s)>12 else '')))
     except Exception: out.append('• crt.sh: غير متاح الآن')
+    w=whois_rdap(d)
+    if w: out.append(w)
     return '\n'.join(out)
 
 def dispatch_code():

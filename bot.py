@@ -126,6 +126,19 @@ def menu():
 def handle_cb(chat,data):
     TL.markup=BACK
     try:
+        if data=='s:home': TL.markup=None; return send(chat,WELCOME,main_menu())
+        if data.startswith('s:t:'):
+            _p=data.split(':'); _sid=_p[2]; _act=SEC_ACT[_sid][int(_p[3])][1]; _kind=_act[0]; _val=_act[1]
+            if _kind=='cmd': return handle(chat,_val)
+            if _kind=='cb': return handle_cb(chat,_val)
+            if _kind=='gh': gh_route(chat,'🐙 أدوات جيت هب'); return
+            if _kind=='tool':
+                import an
+                if _val in an.TXT and _val not in an.RUN: AN[chat]=_val; return send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(_val,an.TXT[_val][1]),sec_kb(_sid))
+                if _val in an.RUN: AN[chat]=_val; return send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(_val,an.RUN[_val][1]),sec_kb(_sid))
+                return send(chat,'الأداة دي مش متاحة من الزر دلوقتي.',sec_kb(_sid))
+            return send(chat,_val,sec_kb(_sid))
+        if data.startswith('s:') and data[2:] in SEC_TEXT: return send(chat,SEC_TEXT[data[2:]],sec_kb(data[2:]))
         if data=='m:menu': TL.markup=None; return send(chat,'القائمة الرئيسية: اختر قسما.',menu())
         if data.startswith('c:') and data[2:] in CAT: return handle(chat,'/tools '+data[2:])
         if data=='m:inc': return handle(chat,'/incidents 10')
@@ -134,6 +147,40 @@ def handle_cb(chat,data):
         if data=='m:dom': return send(chat,'🌐 افحص دومين (للنطاقات التي تملك تصريحا بفحصها فقط):\n/authdomain add example.com — إضافة نطاق مصرح\n/domaincheck example.com — فحص سلبي مع درجة من 100 ونصائح إصلاح')
         if data=='m:img': return send(chat,IMG_USAGE)
     finally: TL.markup=None
+WELCOME='🛡 DARK OSINT HUB\n\nأهلاً بيك في Dark OSINT Hub 👋\nمنصتك لأدوات الأمن السيبراني وتحليل المعلومات.\nاختار القسم اللي محتاجه من القائمة.'
+SECTIONS=[('osint','🔍 استخبارات المصادر المفتوحة OSINT'),('web','🌐 فحص أمان المواقع'),('net','🌍 تحليل الشبكات وعناوين IP'),('threat','🧬 استخبارات التهديدات'),('cve','🐛 الثغرات الأمنية CVE'),('forensics','📁 التحليل الجنائي الرقمي'),('github','🐙 أدوات GitHub'),('monitor','📡 مركز المراقبة والتنبيهات'),('ai','🤖 المساعد الذكي'),('reports','📊 التقارير والنتائج'),('settings','⚙️ الإعدادات'),('help','📖 شرح استخدام البوت')]
+SEC_TEXT={
+'osint':'🔍 استخبارات المصادر المفتوحة OSINT\nالقسم ده بيجمع معلومات علنية من مصادر عامة، من غير أي فحص مباشر على الهدف.\n\n• النطاقات الفرعية: اكتشاف نطاقات أي دومين من شهادات SSL العلنية (crt.sh) — لازم الدومين يكون مصرح بيه.\n• بيانات IP العامة: بورتات وثغرات معروفة لأي عنوان IP من بيانات Shodan InternetDB المفهرسة.\n• فحص باسورد مسرب: تتأكد باسورد ظهر في تسريبات معروفة ولا لأ (بيتبعت أول 5 حروف من الهاش بس).\n• بحث المكتبة: دوّر بكلمة في الحوادث والأدوات المسجلة (/search).\n• حوادث جهة: كل الحوادث المرتبطة بشركة أو جهة (/company).\n• الفهرس المركزي: أقسام المكتبة وعدد سجلاتها (/index).',
+'web':'🌐 فحص أمان المواقع\nفحوص نشطة خفيفة وغير إتلافية، بتتنفذ على GitHub Actions، ولازم الدومين يكون معتمد أو مثبت ملكيته الأول.\n\n• فحص ترويسات فوري جوه البوت: ترويسات الأمان ودرجة من 100 لأي دومين مصرح بيه (من زر فحص الترويسات تحت).\n• /scan أداة دومين — الأدوات: nuclei (قوالب كشف آمنة)، zap (فحص سلبي)، nikto (ملفات وإعدادات)، ffuf (مسارات مكشوفة)، testssl (شهادات وتشفير TLS)، httpx (مضيف حي وتقنيات).\n• /fullscan دومين — فحص شامل بكل المراحل (تقريباً 15-30 دقيقة).\n• /rescan دومين — إعادة الفحص والمقارنة باللي قبله.\n• /status — حالة آخر الفحوصات.\n• الاعتماد والإثبات: /approve دومين (إقرار ملكية/تصريح)، /verifydomain دومين (إثبات ملكية بـ DNS TXT).',
+'net':'🌍 تحليل الشبكات وعناوين IP\nاكتشاف الأجهزة والخدمات والبورتات، للأهداف المصرح بها بس.\n\n• Nmap: أشهر 100 بورت ونسخ الخدمات — /scan nmap دومين.\n• Recon شامل: نطاقات فرعية وبورتات وشهادات وتقنيات (subfinder وdnsx وnaabu وtlsx وcdncheck وkatana وgau وwafw00f) — /scan recon دومين.\n• بيانات IP العامة: بورتات وثغرات أي عنوان من Shodan InternetDB (من الزر اللي تحت).\n• تحليل PCAP: ابعت ملف تسجيل شبكة وأطلعلك ملخص البروتوكولات والاتصالات (من زر Wireshark تحت).\n• بحث مؤشر: /ioc وبعده عنوان IP.',
+'threat':'🧬 استخبارات التهديدات\nحوادث ومؤشرات تهديد من مصادر رسمية عامة (HIBP وCISA KEV وMITRE ATT&CK وFeodo وOpenPhish وغيرها).\n\n• آخر الحوادث: أحدث الحوادث المسجلة مع المصدر والتاريخ.\n• تحديث البيانات: جلب جديد من كل المصادر دلوقتي.\n• مؤشرات التهديد: دوّر بـ IP أو دومين أو رابط أو CVE في المؤشرات المحلية (من زر مؤشرات التهديد تحت).\n• تقنيات MITRE ATT&CK: اكتب اسم تقنية أو رقمها وأجيبلك وصفها (من الزر اللي تحت).\n• خط زمني: /timeline وبعده سنة أو اسم جهة.',
+'cve':'🐛 الثغرات الأمنية CVE\nCVE هو الرقم التعريفي العالمي لأي ثغرة أمنية معلنة.\n\n• بحث برقم CVE: اكتب الرقم وأدوّر في قاعدة الثغرات المستغلة فعلياً (CISA KEV) والحوادث والمؤشرات (من الزر اللي تحت).\n• الثغرات المستغلة فعلياً: بتظهر ضمن آخر الحوادث.\n• بحث عام: /search وبعده رقم الثغرة أو اسم المنتج.\n\n⚠️ تحليل درجات الخطورة CVSS واحتمالية الاستغلال EPSS بشكل تفصيلي لسه قيد التطوير — المتاح دلوقتي البحث في KEV والحوادث والمؤشرات المحلية.',
+'forensics':'📁 التحليل الجنائي الرقمي\nتحليل ساكن آمن: أي ملف بيتحلل من غير ما يتشغّل أبداً.\n\n• فحص صورة: بيانات EXIF (بيانات وصفية جوه الصورة) وروابط بحث عكسي (من الزر اللي تحت، أو ابعت الصورة كملف مع /imgcheck).\n• تحليل ملف ساكن: نوع الملف وهاشاته ونصوصه ومؤشرات الخطر (Ghidra وradare2 وYARA — نسخ خفيفة جوه البوت).\n• بيانات الملفات الوصفية: ExifTool للمستندات وملفات PDF والأرشيفات.\n• تحليل لوجات: مطابقة أسطر اللوج على قواعد كشف شائعة (Sigma وWazuh — نسخ خفيفة).\n• فحص مكتبات: ابعت محتوى requirements.txt أو package.json وأفحصه في قاعدة ثغرات OSV (Trivy).\n• أدوات الصور والتحقق: فئة كاملة بأدواتها (من الزر اللي تحت).',
+'github':'🐙 أدوات GitHub\nبيانات عامة عبر الـ API الرسمي، من غير تسجيل دخول.\n\n• قائمة أدوات جيت هب التفاعلية: حسابات ومستودعات وآخر تعديلات وفحص أسماء ملفات حساسة (من الزر الأول تحت).\n• /gh وبعده user أو repos أو repo أو commits أو files ثم الاسم — نفس الأدوات بأوامر مباشرة، و/gh myemail لفحص ظهور إيميلك في مستودعاتك.\n• فحص كود مستودعك: /codescan بيشغّل Semgrep وTrivy وGitleaks وBandit وغيرهم على مستودع dark-osint-hub-bot ويرجعلك أعداد بس، من غير ما يعرض أي أسرار.\n• فحص أسرار: ابعت نص أو ملف كود وأفحصه عن مفاتيح مكشوفة (بعرض النوع ورقم السطر بس).',
+'monitor':'📡 مركز المراقبة والتنبيهات\n⚠️ المراقبة المجدولة والتنبيهات التلقائية (تغيّر سجلات DNS، وقرب انتهاء شهادات SSL، وثغرات CVE جديدة على أصولك المسجلة) لسه قيد التطوير.\n\nالمتاح فعلياً دلوقتي:\n• /jobs — حالة مهام الفحص على GitHub Actions.\n• /status — حالة آخر الفحوصات.\n• /updates — تحديث قواعد الحوادث والمؤشرات من مصادرها دلوقتي.\n• /incidents — آخر الحوادث المسجلة.\n• /timeline — خط زمني للحوادث بسنة أو اسم جهة.',
+'ai':'🤖 المساعد الذكي\nاسأل بلغتك العادية، عربي أو إنجليزي، والمساعد هيفهم قصدك ويرشحلك الأداة المناسبة من أدوات البوت، ويشرحلك النتائج ويقترح توصيات دفاعية.\n\n• اكتب سؤالك مباشرة في الشات من غير أي أمر.\n• أو استخدم /ask وبعده سؤالك.\n• المحادثة بتتحفظ، فالمساعد فاكر سياق كلامك.\n• المساعد مش بينفذ فحوص نشطة لوحده: أي فحص بيتم من أقسام الفحص وبعد اعتماد الهدف.',
+'reports':'📊 التقارير والنتائج\nنتائج فحوصك وتقاريرك المحفوظة.\n\n• /reports — التقارير المحفوظة (و/reports رقم لعرض تقرير، و/reports export لتنزيلها كلها JSON).\n• /report — آخر تقرير شامل كملف (HTML) من فحوص GitHub Actions، و/report دومين لآخر تقرير لدومين معين.\n• /history — سجل الفحوصات الشاملة ودرجات خطورتها، و/history دومين لدومين معين.\n• /export csv أو /export json — تصدير سجل الحوادث كملف.\n• /auditlog — سجل الاعتمادات والعمليات (و/auditlog export للتنزيل الكامل).',
+'settings':'⚙️ الإعدادات\nإدارة أهدافك المصرح بها وحالة البوت.\n\n• /targets — الأهداف المعتمدة حالياً.\n• /authdomain add أو remove أو list دومين — إدارة النطاقات المصرح بها.\n• /registry — سجل أدوات الفحص وحالة ربطها.\n• /inventory — جرد الأدوات: اللي بيشتغل جوه البوت واللي محتاج سيرفر واللي روابط.\n• /selftest — اختبار ذاتي للأدوات على عينات آمنة (ناجح أو فاشل).\n• /buttons — إظهار أزرار لوحة المفاتيح اللي تحت.\n• فئات الأدوات الكلاسيكية من الزر اللي تحت.',
+'help':'📖 شرح استخدام البوت\n🛡 Dark OSINT Hub منصة أدوات أمن سيبراني وتحليل معلومات، شغالة كلها من جوه تيليجرام.\n\n• القائمة الرئيسية فيها 12 قسم، وكل قسم مستقل وبيعرض أدواته بس.\n• أي أداة: اختارها من قسمها، والبوت هيطلب منك البيانات اللي محتاجها خطوة بخطوة.\n• الفحوص النشطة (scan وfullscan) بتشتغل بس على دومينات انت معتمدها بـ /approve أو مثبت ملكيتها بـ /verifydomain.\n• البوت ده لحساب المالك بس، وكل عملية بتتسجل في سجل المراجعة.\n• /help — النص الكامل لكل الأوامر.\n• /index — الفهرس المركزي للمكتبة.\n• القائمة الكلاسيكية بفئات الأدوات من الزر اللي تحت.'}
+SEC_ACT={
+'osint':[('🔎 النطاقات الفرعية',('tool','subfinder')),('🌍 بيانات IP العامة',('tool','Shodan')),('🔑 فحص باسورد مسرب',('tool','Have I Been Pwned')),('📚 فهرس المكتبة',('cmd','/index')),('🔎 بحث في المكتبة',('hint','🔎 البحث: اكتب /search وبعدها الكلمة.\nمثال: /search Adobe')),('🏢 حوادث جهة معينة',('hint','🏢 اكتب /company وبعدها اسم الشركة أو الجهة.\nمثال: /company LinkedIn'))],
+'web':[('🛡 فحص ترويسات فوري',('tool','OWASP ZAP')),('📊 حالة الفحوصات',('cmd','/status')),('🚀 طريقة فحص /scan',('hint','🚀 الاستخدام: /scan أداة دومين\nالأدوات: nuclei وzap وnikto وffuf وtestssl وhttpx.\nلازم الدومين يكون معتمد بـ /approve أو مثبت بـ /verifydomain. الفحص بيتنفذ على GitHub Actions والنتيجة بتيجي هنا.')),('🧪 طريقة الفحص الشامل',('hint','🧪 الاستخدام: /fullscan دومين\nفحص شامل متعدد المراحل لدومين معتمد، بياخد تقريباً 15-30 دقيقة، والتقدم بيوصلك مرحلة مرحلة. و/rescan دومين بيعيد الفحص وبيقارنه باللي قبله.')),('📝 اعتماد دومين',('hint','📝 الاستخدام: /approve دومين\nهتقر إنك تملك الدومين أو معاك تصريح كتابي بفحصه، وبعدين اكتب /approve دومين أقر للتأكيد. الإقرار بيتحفظ في سجل المراجعة.')),('🔐 إثبات ملكية دومين',('hint','🔐 الاستخدام: /verifydomain دومين\nالبوت هيديك سجل DNS TXT تضيفه عند مسجل الدومين، وبعد ما يظهر اكتب /verifydomain check دومين.'))],
+'net':[('🌍 بيانات IP العامة',('tool','Shodan')),('🦈 تحليل ملف PCAP',('tool','Wireshark')),('🚪 طريقة فحص Nmap',('hint','🚪 الاستخدام: /scan nmap دومين\nبيكشف أشهر 100 بورت ونسخ الخدمات على دومين معتمد.')),('🧭 طريقة Recon الشامل',('hint','🧭 الاستخدام: /scan recon دومين\nاستطلاع شامل لدومين معتمد: نطاقات فرعية وبورتات وشهادات وتقنيات ويب.')),('⚠️ بحث مؤشر IP',('hint','⚠️ الاستخدام: /ioc قيمة\nمثال: /ioc 1.2.3.4 أو /ioc CVE-2021-44228 أو /ioc دومين'))],
+'threat':[('🚨 آخر الحوادث',('cmd','/incidents 10')),('📡 المصادر',('cmd','/sources')),('🔄 تحديث البيانات',('cmd','/updates')),('🧬 مؤشرات التهديد',('tool','MISP')),('🎯 تقنيات ATT&CK',('tool','MITRE ATT&CK Navigator')),('🕒 خط زمني',('hint','🕒 الاستخدام: /timeline سنة أو اسم\nمثال: /timeline 2023 أو /timeline Adobe'))],
+'cve':[('🐛 بحث برقم CVE',('tool','CISA KEV Catalog')),('🚨 الثغرات المستغلة والحوادث',('cmd','/incidents 10')),('🔎 بحث عام',('hint','🔎 البحث: اكتب /search وبعدها رقم الثغرة أو اسم المنتج.\nمثال: /search CVE-2021-44228'))],
+'forensics':[('📷 فحص صورة',('cb','m:img')),('🧩 تحليل ملف ساكن',('tool','Ghidra')),('🏷 بيانات ملف وصفية',('tool','ExifTool')),('📜 تحليل لوجات',('tool','Sigma')),('📦 فحص مكتبات',('tool','Trivy')),('🖼 أدوات الصور والتحقق',('cb','c:image-verification'))],
+'github':[('🐙 قائمة أدوات جيت هب',('gh','')),('💻 فحص كود مستودعي',('cmd','/codescan')),('🔑 فحص أسرار كود',('tool','TruffleHog')),('⌨️ أوامر /gh',('hint','⌨️ الاستخدام: /gh user أو repos أو repo أو commits أو files وبعدها الاسم.\nأو /gh myemail لفحص ظهور إيميلك في مستودعاتك العامة.'))],
+'monitor':[('📋 حالة المهام',('cmd','/jobs')),('📊 حالة الفحوصات',('cmd','/status')),('🔄 تحديث البيانات',('cmd','/updates')),('🚨 آخر الحوادث',('cmd','/incidents 10')),('🕒 خط زمني',('hint','🕒 الاستخدام: /timeline سنة أو اسم\nمثال: /timeline 2023 أو /timeline Adobe'))],
+'ai':[('✍️ إزاي تسأل المساعد',('hint','🤖 اكتب سؤالك مباشرة هنا في الشات من غير أي أمر، أو اكتب /ask وبعده سؤالك.\nمثال: أي أداة أستخدم عشان أتأكد من صورة؟'))],
+'reports':[('🗂 تقاريري',('cmd','/reports')),('📄 آخر تقرير شامل',('cmd','/report')),('🕒 سجل الفحوصات',('cmd','/history')),('💾 تصدير الحوادث',('cmd','/export csv')),('📜 سجل العمليات',('cmd','/auditlog'))],
+'settings':[('🎯 الأهداف المعتمدة',('cmd','/targets')),('📋 سجل الأدوات',('cmd','/registry')),('🧰 جرد الأدوات',('cmd','/inventory')),('🧪 اختبار ذاتي',('cmd','/selftest')),('⌨️ أزرار لوحة المفاتيح',('cmd','/buttons')),('🗂 فئات الأدوات',('cb','m:menu')),('🌐 إدارة النطاقات المصرح بها',('hint','🌐 الاستخدام: /authdomain add دومين للإضافة، و/authdomain remove دومين للحذف، و/authdomain list للعرض.'))],
+'help':[('❓ نص المساعدة الكامل',('cmd','/help')),('📚 الفهرس المركزي',('cmd','/index')),('🗂 القائمة الكلاسيكية',('cb','m:menu'))]}
+def main_menu(): return {'inline_keyboard':[[{'text':t,'callback_data':'s:'+i}] for i,t in SECTIONS]}
+def sec_kb(sid):
+    rows=[]; items=SEC_ACT[sid]
+    for i in range(0,len(items),2): rows.append([{'text':items[j][0],'callback_data':'s:t:%s:%d'%(sid,j)} for j in range(i,min(i+2,len(items)))])
+    rows.append([{'text':'🏠 القائمة الرئيسية','callback_data':'s:home'}])
+    return {'inline_keyboard':rows}
 HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مصادر رسمية عامة فقط)
 
 🌐 فحص مواقع:
@@ -349,7 +396,8 @@ def handle(chat,text):
         if kb_route(chat,text): return
         r=kb_action(chat,text)
         return r if r is not None or text.strip() in sum(KBROWS,[]) else ask_ai(chat,text)
-    if cmd in('/start','/help'): return send(chat,HELP+'\n/imgcheck — فحص صورة (EXIF وروابط بحث عكسي)\n/ask سؤال — المساعد الذكي يرشّح لك الأداة المناسبة (أو اكتب سؤالك مباشرة)\n/menu — فئات الأدوات بأزرار\n\nالأزرار اللي تحت بتفتحلك كل قسم.',KB)
+    if cmd=='/start': return send(chat,WELCOME,main_menu())
+    if cmd=='/help': return send(chat,HELP+'\n/imgcheck — فحص صورة (EXIF وروابط بحث عكسي)\n/ask سؤال — المساعد الذكي يرشّح لك الأداة المناسبة (أو اكتب سؤالك مباشرة)\n/menu — فئات الأدوات بأزرار\n\nالأزرار اللي تحت بتفتحلك كل قسم.',KB)
     if cmd=='/gh': return send(chat,gh_run((arg.split() or [''])[0],' '.join(arg.split()[1:])) if arg.strip() else 'الاستخدام: /gh user|repos|repo|commits|files الاسم  أو  /gh myemail')
     if cmd in('/buttons','/keyboard'): return send(chat,'⌨️ الأزرار رجعت تحت. اضغط على أي قسم.',KB)
     if cmd=='/verifydomain':
@@ -437,7 +485,7 @@ def handle(chat,text):
             data=json.dumps(rows,ensure_ascii=False,indent=1).encode(); call('sendDocument',{'chat_id':chat,'caption':'كل التقارير المحفوظة (%d)'%len(rows)},{'document':('reports.json',data)}); return
         rows=c.execute('select id,ts,tool,target from reports order by id desc limit 15').fetchall()
         return send(chat,('🗂 آخر التقارير المحفوظة (اكتب /reports رقم لعرض تقرير، أو /reports export لتنزيلها كلها):\n'+'\n'.join('#%d | %s | %s | %s'%(r['id'],r['ts'][:16],r['tool'],r['target']) for r in rows)+'\n\nملحوظة: التخزين على الخطة المجانية مؤقت وممكن يتمسح مع إعادة التشغيل، نزّلها بـ /reports export.') if rows else 'لسه مفيش تقارير. أي فحص بتعمله بيتحفظ هنا.')
-    if cmd=='/menu': return send(chat,'🔧 اختر قسما:',menu())
+    if cmd=='/menu': return send(chat,WELCOME,main_menu())
     if cmd=='/imgcheck': return send(chat,IMG_USAGE)
     if cmd=='/incidents':
         n=int(arg) if re.fullmatch(r'[0-9]{1,3}',arg) else 10; n=max(1,min(n,30))

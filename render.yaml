@@ -3,7 +3,7 @@ services:
     name: dark-osint-hub-bot
     runtime: python
     plan: free
-    buildCommand: "echo no dependencies"
+    buildCommand: "pip install -r requirements.txt"
     startCommand: "MODE=webhook SET_WEBHOOK=1 python3 bot.py"
     healthCheckPath: /
     envVars:

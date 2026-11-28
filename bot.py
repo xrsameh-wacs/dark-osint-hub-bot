@@ -95,6 +95,22 @@ def tool_intro(name):
         key=KEY_OVERRIDE.get(name,key)
     desc=AR.get(name,'لا يوجد وصف')
     return '🔧 %s\n%s\n\n📌 بتعمل إيه؟ %s\n📥 البيانات المطلوبة: %s\n📤 النتيجة المتوقعة: %s\n📍 التشغيل: %s\n🔑 API Key: %s\n🛡 تصريح: %s\n\n▶️ %s'%(name,desc,what,inp,res,where,key,perm,prompt)
+# ---- أزرار موحدة (مواصفة إعادة التنظيم §7): أداة/رجوع/رئيسية/إعادة فحص/إلغاء ----
+# أسماء الـ callbacks ثابتة: rs:اسم_الأداة (إعادة فحص)، cx (إلغاء الإدخال)،
+# s:قسم (رجوع للقسم)، s:home (الرئيسية)، c:فئة، m:قسم/أمر، pg:تصفح.
+def tool_section(name):
+    for sid,items in SEC_ACT.items():
+        for _label,(_kind,_val) in items:
+            if _kind=='tool' and _val==name: return sid
+    return None
+def result_kb(name):
+    rows=[[{'text':'🔄 إعادة الفحص','callback_data':'rs:'+name}]]
+    sid=tool_section(name); row2=[]
+    if sid: row2.append({'text':'⬅️ رجوع للقسم','callback_data':'s:'+sid})
+    row2.append({'text':'🏠 القائمة الرئيسية','callback_data':'s:home'})
+    rows.append(row2)
+    return {'inline_keyboard':rows}
+TOOL_KB={'inline_keyboard':[[{'text':'❌ إلغاء','callback_data':'cx'}],[{'text':'🏠 القائمة الرئيسية','callback_data':'s:home'}]]}
 def tool_card(name):
     import an
     c=db(); r=c.execute('select name,category,url from tools where name=?',(name,)).fetchone()
@@ -179,13 +195,13 @@ def _pg_page(chat,data):
 def save_rep(tool,target,text):
     c=db(); c.execute('create table if not exists reports(id integer primary key autoincrement, ts text, tool text, target text, summary text)')
     c.execute('insert into reports(ts,tool,target,summary) values(?,?,?,?)',(now(),tool,(target or '')[:120],text)); c.commit()
-def send_rep(chat,tool,target,text):
+def send_rep(chat,tool,target,text,markup=None):
     try: save_rep(tool,target,text)
     except Exception as e: print('rep err',type(e).__name__,flush=True)
-    return send(chat,text)
+    return send(chat,text,markup)
 def an_text(chat,t):
     import an
-    nm=AN.pop(chat); k=an.TXT.get(nm,('file',))[0]; t=t.strip(); send=lambda c,x,_n=nm,_t=t: send_rep(c,_n,_t if k!='pwned' else 'hidden',x)
+    nm=AN.pop(chat); k=an.TXT.get(nm,('file',))[0]; t=t.strip(); send=lambda c,x,_n=nm,_t=t: send_rep(c,_n,_t if k!='pwned' else 'hidden',x,result_kb(_n))
     if k=='kev': return send(chat,an.kev_lookup(t))
     if k=='censys': return send(chat,'⚠️ Censys مش متاح فعليا على البوت: محتاج حساب ومفتاح API خاص بيه، ومفيش مفتاح مضاف حاليا. بيانات IP مجانية حقيقية متاحة من أداة Shodan (InternetDB) في قسم OSINT.')
     if k=='plat': return send(chat,an.PLAT_TEXT.get(nm,'الأداة دي منصة محتاجة سيرفر خاص بيك ومش بتشتغل من البوت.'))
@@ -232,11 +248,11 @@ def kb_route(chat,t):
     if chat in AN and AN[chat] in __import__('an').FILE_TOOLS and t.strip() and not t.startswith('/') and not t.startswith(('🔧','📂','🔙','⌨️','🐙')) and t.strip() not in sum(KBROWS,[]): send(chat,'الأداة دي بتشتغل على ملف: ابعت الملف نفسه كملف (📎 File) وأنا أرفعه وأشغّل الأداة عليه.'); return True
     if chat in AN and AN[chat] in __import__('an').TXT and t.strip() and not t.startswith('/') and not t.startswith(('🔧','📂','🔙','⌨️','🐙')) and t.strip() not in sum(KBROWS,[]): an_text(chat,t); return True
     if chat in AN and AN[chat] in __import__('an').RUN and AN[chat] not in __import__('an').TXT and t.strip() and not t.startswith(('/','🔧','📂','🔙','⌨️','🐙')) and t.strip() not in sum(KBROWS,[]):
-        nm=AN.pop(chat); send(chat,__import__('an').RUN[nm][0](t.encode(),'نص')); return True
+        nm=AN.pop(chat); send(chat,__import__('an').RUN[nm][0](t.encode(),'نص'),result_kb(nm)); return True
     if gh_route(chat,t): return True
     t=t.strip()
-    if t==BK_MAIN: send(chat,'⌨️ القائمة الرئيسية، اختار قسم.',KB); return True
-    if t==BK_CAT: send(chat,'📂 اختار فئة الأدوات:',cats_kb()); return True
+    if t==BK_MAIN: AN.pop(chat,None); send(chat,'⌨️ القائمة الرئيسية، اختار قسم.',KB); return True
+    if t==BK_CAT: AN.pop(chat,None); send(chat,'📂 اختار فئة الأدوات:',cats_kb()); return True
     if t=='🖼 أدوات الصور': send(chat,'🖼 أدوات فحص الصور والتحقق. اختار أداة وهتلاقي وصفها ورابطها:',cat_kb('image-verification')); return True
     if t=='🧰 كل الأدوات': send(chat,'📂 اختار فئة الأدوات:',cats_kb()); return True
     if t.startswith('📂 '):
@@ -246,7 +262,7 @@ def kb_route(chat,t):
         import an
         nm=t[2:].strip()
         if nm in an.TXT or nm in an.RUN or nm in an.FILE_TOOLS:
-            AN[chat]=nm; send(chat,tool_intro(nm) or '🔧 %s'%nm); return True
+            AN[chat]=nm; send(chat,tool_intro(nm) or '🔧 %s'%nm,TOOL_KB); return True
         card=tool_card(nm)
         if card: send(chat,card); return True
     return False
@@ -263,7 +279,14 @@ def handle_cb(chat,data):
     if data.startswith('pg:'): return _pg_page(chat,data)
     TL.markup=BACK
     try:
-        if data=='s:home': TL.markup=None; return send(chat,WELCOME,main_menu())
+        if data=='cx': AN.pop(chat,None); return send(chat,'❌ اتلغى — اختار اللي محتاجه من القائمة.',main_menu())
+        if data.startswith('rs:'):
+            import an
+            _nm=data[3:]
+            if _nm in an.TXT or _nm in an.RUN or _nm in an.FILE_TOOLS:
+                AN[chat]=_nm; return send(chat,tool_intro(_nm) or '🔧 %s'%_nm,TOOL_KB)
+            return send(chat,'الأداة دي مش متاحة دلوقتي.',main_menu())
+        if data=='s:home': TL.markup=None; AN.pop(chat,None); return send(chat,WELCOME,main_menu())
         if data.startswith('s:t:'):
             _p=data.split(':'); _sid=_p[2]; _act=SEC_ACT[_sid][int(_p[3])][1]; _kind=_act[0]; _val=_act[1]
             if _kind=='cmd': return handle(chat,_val)
@@ -272,16 +295,16 @@ def handle_cb(chat,data):
             if _kind=='tool':
                 import an
                 if _val in an.TXT or _val in an.RUN or _val in an.FILE_TOOLS:
-                    AN[chat]=_val; return send(chat,tool_intro(_val) or '🔧 %s'%_val,sec_kb(_sid))
+                    AN[chat]=_val; return send(chat,tool_intro(_val) or '🔧 %s'%_val,TOOL_KB)
                 return send(chat,'الأداة دي مش متاحة من الزر دلوقتي.',sec_kb(_sid))
             return send(chat,_val,sec_kb(_sid))
         if data.startswith('s:') and data[2:] in SEC_TEXT: return send(chat,SEC_TEXT[data[2:]],sec_kb(data[2:]))
-        if data=='m:menu': TL.markup=None; return send(chat,'القائمة الرئيسية: اختر قسما.',menu())
+        if data=='m:menu': TL.markup=None; AN.pop(chat,None); return send(chat,'القائمة الرئيسية: اختار قسم.',menu())
         if data.startswith('c:') and data[2:] in CAT: return handle(chat,'/tools '+data[2:])
         if data=='m:inc': return handle(chat,'/incidents 10')
         if data=='m:index': return handle(chat,'/index')
         if data=='m:src': return handle(chat,'/sources')
-        if data=='m:dom': return send(chat,'🌐 افحص دومين (للنطاقات التي تملك تصريحا بفحصها فقط):\n/authdomain add example.com — إضافة نطاق مصرح\n/domaincheck example.com — فحص سلبي مع درجة من 100 ونصائح إصلاح')
+        if data=='m:dom': return send(chat,'🌐 افحص دومين (للنطاقات اللي معاك تصريح بفحصها بس):\n/authdomain add example.com — إضافة نطاق مصرح\n/domaincheck example.com — فحص سلبي مع درجة من 100 ونصائح إصلاح')
         if data=='m:img': return send(chat,IMG_USAGE)
     finally: TL.markup=None
 WELCOME='🛡 DARK OSINT HUB\n\nأهلاً بيك في Dark OSINT Hub 👋\nمنصتك لأدوات الأمن السيبراني وتحليل المعلومات.\nاختار القسم اللي محتاجه من القائمة.'
@@ -303,7 +326,7 @@ SEC_ACT={
 'osint':[('🔎 النطاقات الفرعية',('tool','subfinder')),('🌍 بيانات IP العامة',('tool','Shodan')),('🔑 فحص باسورد مسرب',('tool','Have I Been Pwned')),('👤 بحث اسم مستخدم (Maigret)',('tool','Maigret')),('📚 فهرس المكتبة',('cmd','/index')),('🔎 بحث في المكتبة',('hint','🔎 البحث: اكتب /search وبعدها الكلمة.\nمثال: /search Adobe')),('🏢 حوادث جهة معينة',('hint','🏢 اكتب /company وبعدها اسم الشركة أو الجهة.\nمثال: /company LinkedIn'))],
 'web':[('🛡 فحص ترويسات فوري',('tool','OWASP ZAP')),('📊 حالة الفحوصات',('cmd','/status')),('🚀 طريقة فحص /scan',('hint','🚀 الاستخدام: /scan أداة دومين\nالأدوات: nuclei وzap وnikto وffuf وtestssl وhttpx.\nلازم الدومين يكون معتمد بـ /approve أو مثبت بـ /verifydomain. الفحص بيتنفذ على GitHub Actions والنتيجة بتيجي هنا.')),('🧪 طريقة الفحص الشامل',('hint','🧪 الاستخدام: /fullscan دومين\nفحص شامل متعدد المراحل لدومين معتمد، بياخد تقريباً 15-30 دقيقة، والتقدم بيوصلك مرحلة مرحلة. و/rescan دومين بيعيد الفحص وبيقارنه باللي قبله.')),('📝 اعتماد دومين',('hint','📝 الاستخدام: /approve دومين\nهتقر إنك تملك الدومين أو معاك تصريح كتابي بفحصه، وبعدين اكتب /approve دومين أقر للتأكيد. الإقرار بيتحفظ في سجل المراجعة.')),('🔐 إثبات ملكية دومين',('hint','🔐 الاستخدام: /verifydomain دومين\nالبوت هيديك سجل DNS TXT تضيفه عند مسجل الدومين، وبعد ما يظهر اكتب /verifydomain check دومين.'))],
 'net':[('🌍 بيانات IP العامة',('tool','Shodan')),('🦈 تحليل ملف PCAP',('tool','Wireshark')),('🚪 طريقة فحص Nmap',('hint','🚪 الاستخدام: /scan nmap دومين\nبيكشف أشهر 100 بورت ونسخ الخدمات على دومين معتمد.')),('🧭 طريقة Recon الشامل',('hint','🧭 الاستخدام: /scan recon دومين\nاستطلاع شامل لدومين معتمد: نطاقات فرعية وبورتات وشهادات وتقنيات ويب.')),('⚠️ بحث مؤشر IP',('hint','⚠️ الاستخدام: /ioc قيمة\nمثال: /ioc 1.2.3.4 أو /ioc CVE-2021-44228 أو /ioc دومين'))],
-'threat':[('🚨 آخر الحوادث',('cmd','/incidents 10')),('📡 المصادر',('cmd','/sources')),('🔄 تحديث البيانات',('cmd','/updates')),('🧬 مؤشرات التهديد',('tool','MISP')),('🎯 تقنيات ATT&CK',('tool','MITRE ATT&CK Navigator')),('🕒 خط زمني',('hint','🕒 الاستخدام: /timeline سنة أو اسم\nمثال: /timeline 2023 أو /timeline Adobe'))],
+'threat':[('🚨 آخر الحوادث',('cmd','/incidents 10')),('📡 المصادر',('cmd','/sources')),('🔄 تحديث البيانات',('cmd','/updates')),('🧬 مؤشرات التهديد',('tool','MISP')),('🛡 سمعة IP (AbuseIPDB)',('tool','AbuseIPDB')),('🧬 تقارير OTX',('tool','AlienVault OTX')),('🦠 سمعة VirusTotal',('tool','VirusTotal')),('🎯 تقنيات ATT&CK',('tool','MITRE ATT&CK Navigator')),('🕒 خط زمني',('hint','🕒 الاستخدام: /timeline سنة أو اسم\nمثال: /timeline 2023 أو /timeline Adobe'))],
 'cve':[('🐛 بحث برقم CVE',('tool','CISA KEV Catalog')),('🚨 الثغرات المستغلة والحوادث',('cmd','/incidents 10')),('🔎 بحث عام',('hint','🔎 البحث: اكتب /search وبعدها رقم الثغرة أو اسم المنتج.\nمثال: /search CVE-2021-44228'))],
 'forensics':[('📷 فحص صورة',('cb','m:img')),('🧩 تحليل ملف ساكن',('tool','Ghidra')),('🏷 بيانات ملف وصفية',('tool','ExifTool')),('📜 تحليل لوجات',('tool','Sigma')),('📦 فحص مكتبات',('tool','Trivy')),('🖼 أدوات الصور والتحقق',('cb','c:image-verification'))],
 'github':[('🐙 قائمة أدوات جيت هب',('gh','')),('💻 فحص كود مستودعي',('cmd','/codescan')),('🔑 فحص أسرار كود',('tool','TruffleHog')),('⌨️ أوامر /gh',('hint','⌨️ الاستخدام: /gh user أو repos أو repo أو commits أو files وبعدها الاسم.\nأو /gh myemail لفحص ظهور إيميلك في مستودعاتك العامة.'))],
@@ -322,7 +345,7 @@ HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مص
 
 🌐 فحص مواقع:
 /domaincheck نطاق — فحص سلبي (DNS وترويسات HTTPS) للنطاقات المصرح بها فقط
-/authdomain add|remove|list نطاق — إدارة النطاقات التي تملك تصريحا بفحصها
+/authdomain add|remove|list نطاق — إدارة النطاقات اللي معاك تصريح بفحصها
 /verifydomain دومين — إثبات ملكية دومين (TXT)
 /scan أداة دومين — فحص نشط خفيف عبر GitHub Actions (لدومين مثبت فقط)
 /fullscan دومين — فحص شامل متعدد المراحل (لدومين معتمد)
@@ -335,7 +358,7 @@ HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مص
 💻 فحص كود ومختبر:
 /codescan — فحص كود الريبو بتاعك (Semgrep وTrivy وGitleaks)
 /bandit /pipaudit /osv /syft /grype /checkov /semgrep /trivy /gitleaks — بتشغل فحص الكود
-/lab — المختبر الدفاعي: تطبيق وهمي على localhost بيتفحص بمحطات دفاعية (ويب وشبكة وكود وحاوية ونظام) على GitHub Actions
+/lab — المختبر الدفاعي: تطبيق وهمي شغال على الجهاز نفسه (localhost) بيتفحص بمحطات دفاعية (ويب وشبكة وكود وحاوية ونظام) على GitHub Actions
 
 🔎 استطلاع وحوادث:
 /incidents [عدد] — آخر الحوادث المسجلة (افتراضي 10) مع المصدر والتاريخ
@@ -449,7 +472,7 @@ def domain_report(d):
     out.append(''); out.append('تسريبات في قائمة HIBP لهذا النطاق: '+('; '.join('%s (%s)'%(x[0],x[1]) for x in hb) or 'لا يوجد في القائمة'))
     out.append('ملاحظة: الدرجة تقديرية وتغطي ترويسات الأمان فقط، وليست تقييما كاملا للموقع.')
     return '\n'.join(out)
-IMG_USAGE='📷 /imgcheck — فحص صورة\n1) أرسل الصورة كملف (📎 ثم ملف/File) مع التعليق /imgcheck لأقرأ بيانات EXIF بالكامل (تيليجرام يحذفها من الصور العادية).\n2) أرفق روابط البحث العكسي الجاهزة: Google Lens وYandex وBing وTinEye (ارفع الصورة في الموقع).\nلا يوجد أي تعرف على الوجوه أو تحديد هوية أشخاص.'
+IMG_USAGE='📷 /imgcheck — فحص صورة\n1) أرسل الصورة كملف (📎 ثم ملف) مع التعليق /imgcheck لأقرأ بيانات EXIF بالكامل (تيليجرام يحذفها من الصور العادية).\n2) أرفق روابط البحث العكسي الجاهزة: Google Lens وYandex وBing وTinEye (ارفع الصورة في الموقع).\nلا يوجد أي تعرف على الوجوه أو تحديد هوية أشخاص.'
 SEARCH_LINKS='🔎 روابط البحث العكسي (افتح الموقع وارفع الصورة):\n• Google Lens: https://lens.google.com\n• Yandex: https://yandex.com/images/\n• Bing: https://www.bing.com/visualsearch\n• TinEye: https://tineye.com\n• InVID-WeVerify: https://www.invid-project.eu/tools-and-services/invid-verification-plugin/'
 def img_check(chat,m,data=None,mime='image/jpeg',isdoc=True):
     import imgx
@@ -603,7 +626,7 @@ def handle(chat,text):
         c=db(); appr=c.execute('select 1 from authorized_domains where domain=?',(d,)).fetchone()
         if not appr and an.txt_ok(d): an.audit(c,'fullscan_dns_proof',d,'via TXT'); appr=True
         if not appr:
-            an.audit(c,'fullscan_blocked',d,'not approved; passive only')
+            an.audit(c,'fullscan_blocked',d,'مش معتمد؛ جمع سلبي بس')
             send(chat,'🚫 %s مش معتمد، فمفيش فحص نشط. اعتمده بـ /approve %s (وبعدها أقر) وارجع اكتب %s %s.\nدلوقتي هعمل جمع معلومات عامة فقط:'%(d,d,cmd,d))
             return send(chat,an.passive(d))
         e=an.dispatch('full',d,job_user=chat); an.audit(db(),'fullscan_dispatch' if not e else 'fullscan_dispatch_failed',d,e or 'ok')
@@ -727,7 +750,7 @@ def handle(chat,text):
         d=norm_domain(arg)
         if not d: return send(chat,'الاستخدام: /domaincheck نطاق\nمثال: /domaincheck example.com (يقبل أيضا رابطا كاملا؛ للنطاقات المصرح بها فقط)')
         if not c.execute('select 1 from authorized_domains where domain=?',(d,)).fetchone(): return send(chat,'النطاق غير مصرح به. أضفه أولا بـ /authdomain add نطاق إن كنت تملكه أو لديك تصريح. لا أفحص نطاقات غير مصرح بها.')
-        return send_rep(chat,'domaincheck',d,domain_report(d))
+        return send_rep(chat,'domaincheck',d,domain_report(d),result_kb('Nikto'))
     if cmd=='/ioc':
         if not arg: return send(chat,'الاستخدام: /ioc قيمة\nمثال: /ioc 1.2.3.4 أو /ioc CVE-2021-44228 أو /ioc نطاق_أو_رابط')
         a=arg.strip(); out=[]
@@ -737,8 +760,8 @@ def handle(chat,text):
         for r in c.execute('select * from incidents where id like ? or title=?',('%'+a.upper()+'%',a.upper())): out.append(line(r))
         import ti
         secs=ti.ioc_sections(a)
-        if secs: return send(chat,('\n'.join(out)+'\n\n' if out else '')+'\n\n'.join(secs))
-        return send(chat,'\n'.join(out) if out else 'لا نتيجة في المصادر المحلية (لا يعني أنه آمن).')
+        if secs: return send(chat,('\n'.join(out)+'\n\n' if out else '')+'\n\n'.join(secs),result_kb('MISP'))
+        return send(chat,'\n'.join(out) if out else 'لا نتيجة في المصادر المحلية (لا يعني أنه آمن).',result_kb('MISP'))
     send(chat,'أمر غير معروف.\n\n'+HELP)
 def main():
     migrate_domains()

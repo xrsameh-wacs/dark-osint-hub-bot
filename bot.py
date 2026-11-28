@@ -604,7 +604,7 @@ def pt_options(full=False):
     opts = {'max_requests': int(os.environ.get('PENTEST_MAX_REQUESTS', '900')),
             'rate': float(os.environ.get('PENTEST_RATE', '0.35')),
             'max_pages': 35, 'max_depth': 2, 'online_recon': True,
-            'external_tools': False, 'allow_upload': bool(full),
+            'external_tools': True, 'allow_upload': bool(full),
             'rate_limit_probe': bool(full), 'accounts': pentest.accounts_from_env(),
             'allow_private': os.environ.get('PENTEST_ALLOW_PRIVATE') == '1'}
     return opts
@@ -659,6 +659,8 @@ def pt_run_inline(chat, target, scope_domains, options):
 
 
 def pt_start(chat, raw):
+    if not SECRET:
+        return send(chat, '⛔ WEBHOOK_SECRET غير مضبوط، ومن غيره رمز الموافقة قابل للتزوير. رجّع المتغير ثم أعد المحاولة.')
     import pentest, an
     target = pentest.canonical_target(raw)
     host = pentest.domain_of(target)
@@ -704,6 +706,8 @@ def pt_confirm(chat, token):
     an.audit(c, 'pentest_confirmed', host, 'target=%s scope=%s' % (target, approved))
     options = pt_options()
     err = pentest.dispatch_worker(target, [approved], chat_id=chat, options=options)
+    if err:
+        err = '%s (%s)' % (err, pentest.preflight_worker() or 'غير معروف')
     if err is None:
         try:
             an.job_open(chat, 'scan', 'pentest', host, 'pentest.yml')

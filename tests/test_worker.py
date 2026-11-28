@@ -1,6 +1,5 @@
 """Worker-level tests: signed jobs run, unsigned/expired/out-of-scope jobs are refused."""
 
-import base64
 import hashlib
 import hmac
 import json

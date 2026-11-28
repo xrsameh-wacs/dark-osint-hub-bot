@@ -40,7 +40,7 @@ def attack(c):
     for o in d['objects']:
         if o.get('type')!='attack-pattern' or o.get('revoked') or o.get('x_mitre_deprecated'): continue
         ref=next((r for r in o.get('external_references',[]) if r.get('source_name')=='mitre-attack'),{})
-        det=json.dumps({'tactics':[p['phase_name'] for p in o.get('kill_chain_phases',[])],'platforms':o.get('x_mitre_platforms')})
+        det=json.dumps({'tactics':[p['phase_name'] for p in o.get('kill_chain_phases',[])],'platforms':o.get('x_mitre_platforms'),'desc':(o.get('description') or '')[:1200]})
         c.execute('insert or replace into incidents values(?,?,?,?,?,?,?,?,?,?,?)',('attack:'+ref.get('external_id',o['id']),'MITRE ATT&CK','technique',o['name'],'unavailable',U(o.get('created','')[:10]),U(ref.get('url')),'unavailable',det,U(o.get('modified','')[:10]),t)); n+=1
     setsrc(c,'MITRE ATT&CK',u,'MITRE ATT&CK Enterprise techniques (STIX)',n,'ok'); return n
 def certfr(c):

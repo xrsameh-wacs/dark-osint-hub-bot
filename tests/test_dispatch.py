@@ -85,7 +85,7 @@ class DispatchTest(unittest.TestCase):
                         self.sent['url'])
         self.assertEqual(self.sent['method'], 'POST')
         self.assertTrue(self.sent['headers']['authorization'].startswith('Bearer '))
-        self.assertEqual(sorted(self.sent['body']['inputs']), ['job', 'sig', 'ts'])
+        self.assertEqual(sorted(self.sent['body']['inputs']), ['job', 'nonce', 'sig', 'ts'])
         self.assertTrue(self.sent['body']['ref'])
 
     def test_dispatched_payload_is_accepted_and_scanned_by_the_worker(self):
@@ -98,7 +98,7 @@ class DispatchTest(unittest.TestCase):
         with open(path, 'wb') as fh:
             fh.write(job)
         out = os.path.join(self.tmp, 'result.json')
-        env = dict(os.environ, SCAN_KEY=KEY)
+        env = dict(os.environ, SCAN_KEY=KEY, PENTEST_MIN_RATE='0', PENTEST_ALLOW_PRIVATE='1')
         env.pop('TELEGRAM_TOKEN', None)
         env.pop('TELEGRAM_BOT_TOKEN', None)
         proc = subprocess.run([sys.executable, WORKER, '--job', path, '--out', out,
@@ -117,7 +117,7 @@ class DispatchTest(unittest.TestCase):
         with open(path, 'w') as fh:
             json.dump(payload, fh)
         out = os.path.join(self.tmp, 'tampered-result.json')
-        env = dict(os.environ, SCAN_KEY=KEY)
+        env = dict(os.environ, SCAN_KEY=KEY, PENTEST_MIN_RATE='0')
         env.pop('TELEGRAM_TOKEN', None)
         proc = subprocess.run([sys.executable, WORKER, '--job', path, '--out', out,
                                '--no-telegram'], capture_output=True, text=True,

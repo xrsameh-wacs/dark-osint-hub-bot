@@ -22,21 +22,26 @@ KEY = 'worker-test-key'
 WORKER = os.path.join(ROOT, 'pentest_worker.py')
 
 
-def build_job(url, scope, ts=None, key=KEY, options=None):
-    ts = str(ts or int(time.time()))
-    sig = hmac.new(key.encode(), ('pentest|%s|%s' % (url, ts)).encode(),
-                   hashlib.sha256).hexdigest()
-    return {'url': url, 'scope': scope, 'ts': ts, 'sig': sig,
-            'options': dict({'rate': 0}, **(options or {})), 'chat_id': None}
+def build_job(url, scope, ts=None, key=KEY, options=None, nonce=None):
+    payload = {'url': url, 'scope': scope, 'ts': str(ts or int(time.time())),
+               'nonce': nonce if nonce is not None else pentest.secrets.token_hex(16),
+               'options': dict({'rate': 0}, **(options or {})), 'chat_id': None,
+               'timeout': 3600}
+    payload['sig'] = pentest.sign_job(payload, key)
+    return payload
 
 
-def run_worker(job, out):
+def run_worker(job, out, allow_private=False):
     tmp = tempfile.NamedTemporaryFile('w', suffix='.json', delete=False)
     json.dump(job, tmp)
     tmp.close()
-    env = dict(os.environ, SCAN_KEY=KEY, PENTEST_MAX_REQUESTS='1600')
+    env = dict(os.environ, SCAN_KEY=KEY, PENTEST_MAX_REQUESTS='1600', PENTEST_MIN_RATE='0')
     env.pop('TELEGRAM_TOKEN', None)
     env.pop('TELEGRAM_BOT_TOKEN', None)
+    if allow_private:
+        env['PENTEST_ALLOW_PRIVATE'] = '1'
+    else:
+        env.pop('PENTEST_ALLOW_PRIVATE', None)
     proc = subprocess.run([sys.executable, WORKER, '--job', tmp.name, '--out', out,
                            '--no-telegram'], capture_output=True, text=True, env=env,
                           timeout=300)
@@ -60,8 +65,8 @@ class WorkerTest(unittest.TestCase):
 
     def test_signed_job_runs_and_writes_reports(self):
         out = self.out('ok.json')
-        proc = run_worker(build_job(self.url, [self.host],
-                                    options={'allow_private': True}), out)
+        proc = run_worker(build_job(self.url, [self.host] + [], key=KEY),
+                          out, allow_private=True)
         self.assertEqual(proc.returncode, 0, proc.stderr[-800:])
         report = json.load(open(out))
         self.assertEqual(report['status'], 'completed')
@@ -91,7 +96,7 @@ class WorkerTest(unittest.TestCase):
     def test_out_of_scope_target_refused(self):
         proc = run_worker(build_job(self.url, ['example.test']), self.out('scope.json'))
         self.assertEqual(proc.returncode, 2)
-        self.assertIn('outside the authorized scope', proc.stderr)
+        self.assertIn('خارج النطاق', proc.stderr)
 
     def test_empty_scope_refused(self):
         proc = run_worker(build_job(self.url, []), self.out('empty.json'))

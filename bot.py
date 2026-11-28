@@ -616,8 +616,28 @@ def pt_store():
     pentest.ensure_tables(c)
     c.execute('create table if not exists pentest_consents(id integer primary key autoincrement, '
               'chat text, target text, token text, ts text)')
+    c.execute('create table if not exists pentest_dispatch(id integer primary key autoincrement, '
+              'chat text, target text, ts integer)')
     c.commit()
     return c
+
+
+PT_COOLDOWN = int(os.environ.get('PENTEST_COOLDOWN', '120'))
+
+
+def pt_cooldown_left(c, chat):
+    """Seconds left before this chat may queue another scan."""
+    row = c.execute('select ts from pentest_dispatch where chat=? order by id desc limit 1',
+                    (str(chat),)).fetchone()
+    if not row:
+        return 0
+    return max(0, PT_COOLDOWN - (int(time.time()) - int(row[0])))
+
+
+def pt_note_dispatch(c, chat, target):
+    c.execute('insert into pentest_dispatch(chat, target, ts) values(?,?,?)',
+              (str(chat), target, int(time.time())))
+    c.commit()
 
 
 def pt_send_report(chat, report, note=''):
@@ -703,12 +723,16 @@ def pt_confirm(chat, token):
     approved = pt_authorized(c, host)
     if not approved:
         return send(chat, 'الاعتماد اتسحب من %s — مفيش فحص.' % host)
+    left = pt_cooldown_left(c, chat)
+    if left:
+        return send(chat, '⏳ فيه فحص بدأ من قريب. استنى %d ثانية قبل ما تبدأ فحص جديد.' % left)
     an.audit(c, 'pentest_confirmed', host, 'target=%s scope=%s' % (target, approved))
     options = pt_options()
     err = pentest.dispatch_worker(target, [approved], chat_id=chat, options=options)
     if err:
         err = '%s (%s)' % (err, pentest.preflight_worker() or 'غير معروف')
     if err is None:
+        pt_note_dispatch(c, chat, target)
         try:
             an.job_open(chat, 'scan', 'pentest', host, 'pentest.yml')
         except Exception:
@@ -721,8 +745,8 @@ def pt_confirm(chat, token):
         pt_run_inline(chat, target, [approved], options)
         return
     return send(chat, '⚠️ العامل المستقل مش جاهز: %s\n\n'
-                      'ثبّت deploy/pentest.yml في ريبو osint-scanner وأضف SCAN_KEY وTELEGRAM_TOKEN '
-                      'وPENTEST_REPO_TOKEN، أو فعّل PENTEST_INLINE=1 للتشغيل داخل البوت (أثقل).\n'
+                      'ثبّت deploy/pentest.yml في ريبو osint-scanner وأضف SCAN_KEY وTELEGRAM_TOKEN فقط '
+                      '(مفيش حاجة لتوكن ريبو)، أو فعّل PENTEST_INLINE=1 للتشغيل داخل البوت (أثقل).\n'
                       'لسه محفوظ اعتماد النطاق — مش هيتم أي طلب قبل ما العامل يشتغل.' % err)
 
 
@@ -766,8 +790,13 @@ def pt_command(chat, arg):
         if not pt_authorized(pt_store(), host):
             return send(chat, 'الاعتماد مش موجود حاليًا لـ %s — مفيش إعادة فحص.' % host)
         if os.environ.get('PENTEST_INLINE') != '1':
+            c = pt_store()
+            left = pt_cooldown_left(c, chat)
+            if left:
+                return send(chat, '⏳ استنى %d ثانية قبل إعادة فحص جديد.' % left)
             err = pentest.dispatch_worker(old['target'], old['scope'], chat_id=chat, options=pt_options())
             if err is None:
+                pt_note_dispatch(c, chat, old['target'])
                 return send(chat, '🔁 إعادة الفحص بدأت على العامل. هقارنها بالتقرير #%s وأقولك إيه اللي اتصلح وإيه اللي لسه.' % a[1])
             return send(chat, 'تعذر بدء إعادة الفحص: %s' % err)
         send(chat, '🔁 إعادة الفحص داخل البوت... هقارنها بالتقرير #%s.' % a[1])

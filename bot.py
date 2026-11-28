@@ -140,6 +140,14 @@ def an_text(chat,t):
         if not d: return send(chat,'دومين غير صالح.')
         if not db().execute('select 1 from authorized_domains where domain=?',(d,)).fetchone(): return send(chat,'الدومين غير مصرح به. أضفه أولا بـ /authdomain add دومين لو بتملكه أو معاك تصريح.')
         e=an.dispatch_files('harvester', d, d); return send(chat, e if e else '🚀 بدأ theHarvester على %s على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق. /jobs للمتابعة.'%d)
+    if k=='hub':
+        import hubsrv
+        pages=hubsrv.answer(nm,t)
+        if pages is None:
+            if nm in ('MISP','OpenCTI'): return handle(chat,'/ioc '+t)
+            return send(chat,an.PLAT_TEXT.get(nm,'الأداة دي منصة محتاجة سيرفر خاص بيك ومش بتشتغل من البوت.'))
+        for _pg in pages: send(chat,_pg)
+        return
     if k=='ioc': return handle(chat,'/ioc '+t)
     if k=='dom': return handle(chat,'/domaincheck '+t)
     if k=='pwned': return send(chat,an.pwned(t))
@@ -539,6 +547,12 @@ def handle(chat,text):
             return send(chat,an.passive(d))
         e=an.dispatch('full',d); an.audit(db(),'fullscan_dispatch' if not e else 'fullscan_dispatch_failed',d,e or 'ok')
         return send(chat,e if e else '🚀 بدأ الفحص الشامل لـ %s على GitHub Actions (تقريبا 15 إلى 30 دقيقة). هبعتلك التقدم لكل مرحلة، والتقرير في الآخر. /status لمتابعة الحالة.'%d)
+    if cmd=='/hub':
+        import hubsrv
+        pages=hubsrv.status_pages()
+        if pages is None: return send(chat,'⚠️ سيرفر المنصات مش متظبط على البوت لسه (HUB_SERVER_URL / HUB_SERVER_TOKEN فاضيين). المنصات (Wazuh وMISP وOpenCTI وGreenbone) محتاجة سيرفر شغال على طول — الباقة المجانية الجاهزة وأدواتها الحالية مكتوبة في دليل «سيرفر المنصات المجاني»، ولحد ما السيرفر يقوم الأدوات دي هتفضل بحالتها الصادقة الحالية.')
+        for _pg in pages: send(chat,_pg)
+        return
     if cmd=='/status':
         import an; return send(chat,an.runs_status())
     if cmd=='/history':

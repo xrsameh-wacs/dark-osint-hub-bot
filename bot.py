@@ -111,6 +111,21 @@ def result_kb(name):
     rows.append(row2)
     return {'inline_keyboard':rows}
 TOOL_KB={'inline_keyboard':[[{'text':'❌ إلغاء','callback_data':'cx'}],[{'text':'🏠 القائمة الرئيسية','callback_data':'s:home'}]]}
+LAB_RUN_TEXT='🧪 المختبر الدفاعي بدأ — تطبيق وهمي وبيانات وهمية على localhost جوه GitHub Actions، من غير أي دومين خارجي. النتيجة هتجيلك هنا، وتتابعها بـ /jobs.\n\nالمحطات اللي هتشتغل:\n🌐 الويب والشبكة: Nmap بسكربتات NSE • OWASP ZAP فحص كامل • Nuclei بكل القوالب • Nikto • ffuf بقايمة مسارات كبيرة • WhatWeb لبصمة التقنيات • wafw00f لكشف WAF • testssl على نسخة HTTPS محلية • محطة الترويسات والكوكيز (هيدرز أمان وأعلام كوكيز وCORS)\n💻 الكود (على سورس تطبيق المعمل نفسه): Semgrep بقواعد موسعة • Bandit • Gitleaks • Trivy • OSV-Scanner • Dependency-Check • retire.js\n🐳 الحاوية والنظام: Trivy لصورة الحاوية • Lynis لتدقيق التصليب • YARA لفحص ملفات المعمل\n🗄 واختبار ذاتي لنسخ احتياطي واسترجاع قاعدة البيانات الوهمية. التشغيل بياخد وقت (ممكن يوصل لساعة أو أكتر) عشان عدد المحطات كبير.'
+LAB_KB={'inline_keyboard':[[{'text':'🧪 حالة المعمل','callback_data':'lab:st'}],[{'text':'▶️ تشغيل المعمل','callback_data':'lab:run'}],[{'text':'📊 تقارير الاختبار','callback_data':'lab:rep'}],[{'text':'📜 سجل العمليات','callback_data':'lab:hist'}],[{'text':'🏠 القائمة الرئيسية','callback_data':'s:home'}]]}
+LAB_VIEW='🧪 إدارة المختبر الدفاعي\n\nالمختبر بيشتغل على GitHub Actions ضد تطبيق وهمي ببيانات وهمية على localhost بس — مفيش أي دومين خارجي بيتمس، ومفيش أي أدوات استغلال.\nمن هنا تقدر تشوف حالة آخر التشغيلات، أو تشغّل المعمل، أو تراجع تقارير الاختبار وسجل العمليات.\n\nوللتشغيل المباشر من غير القائمة دي اكتب: /lab run'
+def lab_run(chat):
+    import an
+    e=an.dispatch_wf('lab.yml',job_user=chat); an.audit(db(),'lab' if not e else 'lab_failed','localhost-lab',e or 'ok')
+    return send(chat,e if e else LAB_RUN_TEXT)
+def lab_status(chat):
+    import an
+    rows=[r for r in an.job_list(chat,10) if r['kind']=='lab']
+    if not rows: return '🧪 حالة المعمل: لسه مفيش تشغيلات معمل مسجلة عندك. شغّل المعمل من زر ▶️ تشغيل المعمل، والمتابعة الحية لأي تشغيل شغال من /jobs.'
+    out=['🧪 آخر تشغيلات المعمل عندك (من سجل المهام):']
+    for r in rows[:5]: out.append('• مهمة #%s | الحالة: %s | %s'%(r['id'],r['status'],r['ts']))
+    out.append('\nالمتابعة الحية لتشغيلات GitHub نفسها من /jobs، وتقرير المعمل الكامل بيوصلك هنا كرسالة وملف بعد كل تشغيل.')
+    return '\n'.join(out)
 def tool_card(name):
     import an
     c=db(); r=c.execute('select name,category,url from tools where name=?',(name,)).fetchone()
@@ -280,6 +295,10 @@ def handle_cb(chat,data):
     TL.markup=BACK
     try:
         if data=='cx': AN.pop(chat,None); return send(chat,'❌ اتلغى — اختار اللي محتاجه من القائمة.',main_menu())
+        if data=='lab:run': return lab_run(chat)
+        if data=='lab:st': return send(chat,lab_status(chat),LAB_KB)
+        if data=='lab:rep': return handle(chat,'/reports')
+        if data=='lab:hist': return handle(chat,'/auditlog')
         if data.startswith('rs:'):
             import an
             _nm=data[3:]
@@ -324,7 +343,7 @@ SEC_TEXT={
 'help':'📖 شرح استخدام البوت\n🛡 Dark OSINT Hub منصة أدوات أمن سيبراني وتحليل معلومات، شغالة كلها من جوه تيليجرام.\n\n• القائمة الرئيسية فيها 12 قسم، وكل قسم مستقل وبيعرض أدواته بس.\n• أي أداة: اختارها من قسمها، والبوت هيطلب منك البيانات اللي محتاجها خطوة بخطوة.\n• الفحوص النشطة (scan وfullscan) بتشتغل بس على دومينات انت معتمدها بـ /approve أو مثبت ملكيتها بـ /verifydomain.\n• البوت ده لحساب المالك بس، وكل عملية بتتسجل في سجل المراجعة.\n• /help — النص الكامل لكل الأوامر.\n• /index — الفهرس المركزي للمكتبة.\n• القائمة الكلاسيكية بفئات الأدوات من الزر اللي تحت.'}
 SEC_ACT={
 'osint':[('🔎 النطاقات الفرعية',('tool','subfinder')),('🌍 بيانات IP العامة',('tool','Shodan')),('🔑 فحص باسورد مسرب',('tool','Have I Been Pwned')),('👤 بحث اسم مستخدم (Maigret)',('tool','Maigret')),('📚 فهرس المكتبة',('cmd','/index')),('🔎 بحث في المكتبة',('hint','🔎 البحث: اكتب /search وبعدها الكلمة.\nمثال: /search Adobe')),('🏢 حوادث جهة معينة',('hint','🏢 اكتب /company وبعدها اسم الشركة أو الجهة.\nمثال: /company LinkedIn'))],
-'web':[('🛡 فحص ترويسات فوري',('tool','OWASP ZAP')),('📊 حالة الفحوصات',('cmd','/status')),('🚀 طريقة فحص /scan',('hint','🚀 الاستخدام: /scan أداة دومين\nالأدوات: nuclei وzap وnikto وffuf وtestssl وhttpx.\nلازم الدومين يكون معتمد بـ /approve أو مثبت بـ /verifydomain. الفحص بيتنفذ على GitHub Actions والنتيجة بتيجي هنا.')),('🧪 طريقة الفحص الشامل',('hint','🧪 الاستخدام: /fullscan دومين\nفحص شامل متعدد المراحل لدومين معتمد، بياخد تقريباً 15-30 دقيقة، والتقدم بيوصلك مرحلة مرحلة. و/rescan دومين بيعيد الفحص وبيقارنه باللي قبله.')),('📝 اعتماد دومين',('hint','📝 الاستخدام: /approve دومين\nهتقر إنك تملك الدومين أو معاك تصريح كتابي بفحصه، وبعدين اكتب /approve دومين أقر للتأكيد. الإقرار بيتحفظ في سجل المراجعة.')),('🔐 إثبات ملكية دومين',('hint','🔐 الاستخدام: /verifydomain دومين\nالبوت هيديك سجل DNS TXT تضيفه عند مسجل الدومين، وبعد ما يظهر اكتب /verifydomain check دومين.'))],
+'web':[('🛡 فحص ترويسات فوري',('tool','OWASP ZAP')),('📊 حالة الفحوصات',('cmd','/status')),('🚀 طريقة فحص /scan',('hint','🚀 الاستخدام: /scan أداة دومين\nالأدوات: nuclei وzap وnikto وffuf وtestssl وhttpx.\nلازم الدومين يكون معتمد بـ /approve أو مثبت بـ /verifydomain. الفحص بيتنفذ على GitHub Actions والنتيجة بتيجي هنا.')),('🧪 طريقة الفحص الشامل',('hint','🧪 الاستخدام: /fullscan دومين\nفحص شامل متعدد المراحل لدومين معتمد، بياخد تقريباً 15-30 دقيقة، والتقدم بيوصلك مرحلة مرحلة. و/rescan دومين بيعيد الفحص وبيقارنه باللي قبله.')),('📝 اعتماد دومين',('hint','📝 الاستخدام: /approve دومين\nهتقر إنك تملك الدومين أو معاك تصريح كتابي بفحصه، وبعدين اكتب /approve دومين أقر للتأكيد. الإقرار بيتحفظ في سجل المراجعة.')),('🔐 إثبات ملكية دومين',('hint','🔐 الاستخدام: /verifydomain دومين\nالبوت هيديك سجل DNS TXT تضيفه عند مسجل الدومين، وبعد ما يظهر اكتب /verifydomain check دومين.')),('🧪 إدارة المختبر الدفاعي',('cmd','/lab'))],
 'net':[('🌍 بيانات IP العامة',('tool','Shodan')),('🦈 تحليل ملف PCAP',('tool','Wireshark')),('🚪 طريقة فحص Nmap',('hint','🚪 الاستخدام: /scan nmap دومين\nبيكشف أشهر 100 بورت ونسخ الخدمات على دومين معتمد.')),('🧭 طريقة Recon الشامل',('hint','🧭 الاستخدام: /scan recon دومين\nاستطلاع شامل لدومين معتمد: نطاقات فرعية وبورتات وشهادات وتقنيات ويب.')),('⚠️ بحث مؤشر IP',('hint','⚠️ الاستخدام: /ioc قيمة\nمثال: /ioc 1.2.3.4 أو /ioc CVE-2021-44228 أو /ioc دومين'))],
 'threat':[('🚨 آخر الحوادث',('cmd','/incidents 10')),('📡 المصادر',('cmd','/sources')),('🔄 تحديث البيانات',('cmd','/updates')),('🧬 مؤشرات التهديد',('tool','MISP')),('🛡 سمعة IP (AbuseIPDB)',('tool','AbuseIPDB')),('🧬 تقارير OTX',('tool','AlienVault OTX')),('🦠 سمعة VirusTotal',('tool','VirusTotal')),('🎯 تقنيات ATT&CK',('tool','MITRE ATT&CK Navigator')),('🕒 خط زمني',('hint','🕒 الاستخدام: /timeline سنة أو اسم\nمثال: /timeline 2023 أو /timeline Adobe'))],
 'cve':[('🐛 بحث برقم CVE',('tool','CISA KEV Catalog')),('🚨 الثغرات المستغلة والحوادث',('cmd','/incidents 10')),('🔎 بحث عام',('hint','🔎 البحث: اكتب /search وبعدها رقم الثغرة أو اسم المنتج.\nمثال: /search CVE-2021-44228'))],
@@ -358,7 +377,7 @@ HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مص
 💻 فحص كود ومختبر:
 /codescan — فحص كود الريبو بتاعك (Semgrep وTrivy وGitleaks)
 /bandit /pipaudit /osv /syft /grype /checkov /semgrep /trivy /gitleaks — بتشغل فحص الكود
-/lab — المختبر الدفاعي: تطبيق وهمي شغال على الجهاز نفسه (localhost) بيتفحص بمحطات دفاعية (ويب وشبكة وكود وحاوية ونظام) على GitHub Actions
+/lab — إدارة المختبر الدفاعي (حالة المعمل وتشغيله وتقارير الاختبار وسجل العمليات)؛ و/lab run للتشغيل المباشر. المعمل: تطبيق وهمي على localhost بيتفحص بمحطات كشف دفاعية على GitHub Actions
 
 🔎 استطلاع وحوادث:
 /incidents [عدد] — آخر الحوادث المسجلة (افتراضي 10) مع المصدر والتاريخ
@@ -581,9 +600,8 @@ def handle(chat,text):
         import an
         return send(chat,an.registry_text())
     if cmd=='/lab':
-        import an
-        e=an.dispatch_wf('lab.yml',job_user=chat); an.audit(db(),'lab' if not e else 'lab_failed','localhost-lab',e or 'ok')
-        return send(chat,e if e else '🧪 المختبر الدفاعي بدأ — تطبيق وهمي وبيانات وهمية على localhost جوه GitHub Actions، من غير أي دومين خارجي. النتيجة هتجيلك هنا، وتتابعها بـ /jobs.\n\nالمحطات اللي هتشتغل:\n🌐 الويب والشبكة: Nmap بسكربتات NSE • OWASP ZAP فحص كامل • Nuclei بكل القوالب • Nikto • ffuf بقايمة مسارات كبيرة • WhatWeb لبصمة التقنيات • wafw00f لكشف WAF • testssl على نسخة HTTPS محلية • محطة الترويسات والكوكيز (هيدرز أمان وأعلام كوكيز وCORS)\n💻 الكود (على سورس تطبيق المعمل نفسه): Semgrep بقواعد موسعة • Bandit • Gitleaks • Trivy • OSV-Scanner • Dependency-Check • retire.js\n🐳 الحاوية والنظام: Trivy لصورة الحاوية • Lynis لتدقيق التصليب • YARA لفحص ملفات المعمل\n🗄 واختبار ذاتي لنسخ احتياطي واسترجاع قاعدة البيانات الوهمية. التشغيل بياخد وقت (ممكن يوصل لساعة أو أكتر) عشان عدد المحطات كبير.')
+        if arg.strip().lower()=='run': return lab_run(chat)
+        return send(chat,LAB_VIEW,LAB_KB)
     if cmd=='/username':
         import an
         u=arg.strip()

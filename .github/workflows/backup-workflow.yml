@@ -1,0 +1,181 @@
+# Dark OSINT Hub — Automated Backup Workflow (prepared, NOT yet installed)
+# Install: copy this file into the dark-osint-hub-bot repo as
+#   .github/workflows/backup.yml
+# via the GitHub web UI (the Muse GitHub App cannot write workflow files:
+# 403 "Resource not accessible by integration" — same as scan.yml/code.yml).
+#
+# What it does every 2 hours:
+#   1. Checks out BOTH source repos (bot + osint-scanner).
+#   2. Builds dark-osint-backup-YYYY-MM-DD-HH-MM.tar.gz (Africa/Tripoli time),
+#      excluding secret-like patterns.
+#   3. Computes SHA-256 for the archive and every file (manifest.json).
+#   4. Verifies the archive by re-opening it and re-hashing every file.
+#   5. Encrypts the verified archive with the BACKUP_PASSPHRASE secret
+#      (AES-256-CBC via openssl, key never stored in the repo).
+#   6. Pushes the encrypted archive + manifest into the SEPARATE private
+#      backup repo (dark-osint-hub-backup) using BACKUP_REPO_TOKEN.
+#   7. Applies retention inside the backup repo (newest 3 always, weekly
+#      keepers for a month, monthly keepers for 6 months, never deletes the
+#      only valid backup, never deletes on a failed run).
+#   8. Sends an Egyptian-Arabic Telegram alert to the owner on success/failure.
+#
+# Required repository secrets (owner adds them himself in
+# Settings -> Secrets and variables -> Actions of dark-osint-hub-bot):
+#   BACKUP_REPO_TOKEN   PAT with repo access to the private backup repo ONLY
+#   BACKUP_PASSPHRASE   strong passphrase for archive encryption
+#   TELEGRAM_BOT_TOKEN  the bot token (for alerts)
+#   TELEGRAM_OWNER_ID   owner's Telegram chat id (for alerts)
+# NOTE: the live SQLite DB on Render is NOT covered by this workflow either
+# (it lives on Render's ephemeral disk). See BACKUP_SYSTEM_GUIDE.md.
+
+name: backup
+
+on:
+  schedule:
+    - cron: "17 */2 * * *"   # every 2 hours, offset minute
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout bot repo
+        uses: actions/checkout@v4
+        with:
+          path: src/dark-osint-hub-bot
+
+      - name: Checkout scanner repo
+        uses: actions/checkout@v4
+        with:
+          repository: xrsameh-wacs/osint-scanner
+          token: ${{ secrets.BACKUP_REPO_TOKEN }}
+          path: src/osint-scanner
+
+      - name: Build archive + manifest
+        id: build
+        run: |
+          set -euo pipefail
+          export TZ=Africa/Tripoli
+          NAME="dark-osint-backup-$(date +%Y-%m-%d-%H-%M)"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          mkdir -p "stage/$NAME"
+          for repo in dark-osint-hub-bot osint-scanner; do
+            (cd "src/$repo" && tar --exclude='.git' \
+              --exclude='.env' --exclude='.env.*' --exclude='*token*' \
+              --exclude='*secret*' --exclude='*.key' --exclude='*.pem' \
+              --exclude='credentials*' -cf - .) | (cd "stage/$NAME" && mkdir -p "$repo" && tar -xf - -C "$repo")
+          done
+          python3 - "$NAME" <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+          name = sys.argv[1]
+          root = Path("stage") / name
+          files = []
+          for p in sorted(root.rglob("*")):
+              if p.is_file():
+                  files.append({"path": str(p.relative_to(root)),
+                                "sha256": hashlib.sha256(p.read_bytes()).hexdigest()})
+          manifest = {"backup_name": name, "type": "code+state",
+                      "file_count": len(files), "files": files,
+                      "known_gaps": ["Live SQLite DB on Render ephemeral disk is NOT included."]}
+          (root / "manifest.json").write_text(json.dumps(manifest, indent=2))
+          PY
+          tar -czf "$NAME.tar.gz" -C stage "$NAME"
+          sha256sum "$NAME.tar.gz" | awk '{print $1}' > "$NAME.sha256"
+
+      - name: Verify archive (re-open + re-hash every file)
+        run: |
+          set -euo pipefail
+          NAME="${{ steps.build.outputs.name }}"
+          python3 - "$NAME" <<'PY'
+          import hashlib, json, sys, tarfile
+          name = sys.argv[1]
+          with tarfile.open(f"{name}.tar.gz", "r:gz") as tar:
+              manifest = json.loads(tar.extractfile(f"{name}/manifest.json").read())
+              for entry in manifest["files"]:
+                  data = tar.extractfile(f"{name}/{entry['path']}").read()
+                  assert hashlib.sha256(data).hexdigest() == entry["sha256"], entry["path"]
+          print(f"VERIFIED: {manifest['file_count']} files OK")
+          PY
+
+      - name: Encrypt verified archive
+        run: |
+          set -euo pipefail
+          NAME="${{ steps.build.outputs.name }}"
+          openssl enc -aes-256-cbc -salt -pbkdf2 -in "$NAME.tar.gz" \
+            -out "$NAME.tar.gz.enc" -pass env:BACKUP_PASSPHRASE
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+
+      - name: Push to private backup repo + retention
+        run: |
+          set -euo pipefail
+          NAME="${{ steps.build.outputs.name }}"
+          git clone "https://x-access-token:${BACKUP_REPO_TOKEN}@github.com/xrsameh-wacs/dark-osint-hub-backup.git" vault
+          cp "$NAME.tar.gz.enc" "$NAME.sha256" vault/
+          python3 - "$NAME" <<'PY'
+          import json, sys, hashlib
+          from pathlib import Path
+          name = sys.argv[1]
+          sha = Path(f"{name}.sha256").read_text().strip()
+          sidecar = {"backup_name": name, "archive_file": f"{name}.tar.gz.enc",
+                     "archive_sha256_of_plaintext": sha, "encrypted": True,
+                     "verification": {"status": "verified"}}
+          Path(f"vault/{name}.manifest.json").write_text(json.dumps(sidecar, indent=2))
+          PY
+          cd vault
+          # Retention: keep newest 3; weekly keepers 35d; monthly keepers 186d;
+          # never delete the only valid backup. (Filenames sort by date.)
+          python3 - <<'PY'
+          from pathlib import Path
+          from datetime import datetime, timedelta, timezone
+          arcs = sorted(Path(".").glob("dark-osint-backup-*.tar.gz.enc"), reverse=True)
+          def dt(p):
+              s = p.name.replace("dark-osint-backup-","").replace(".tar.gz.enc","")
+              return datetime.strptime(s, "%Y-%m-%d-%H-%M").replace(tzinfo=timezone.utc)
+          now = datetime.now(timezone.utc)
+          keep = set(arcs[:3])
+          weeks, months = {}, {}
+          for a in arcs:
+              age = now - dt(a)
+              if age <= timedelta(days=35): weeks.setdefault(dt(a).strftime("%G-W%V"), a)
+              if age <= timedelta(days=186): months.setdefault(dt(a).strftime("%Y-%m"), a)
+          keep |= set(weeks.values()) | set(months.values())
+          if len(keep) == 0 and arcs: keep.add(arcs[0])
+          for a in arcs:
+              if a not in keep:
+                  a.unlink(missing_ok=True)
+                  Path(str(a).replace(".tar.gz.enc", ".manifest.json")).unlink(missing_ok=True)
+                  Path(str(a).replace(".tar.gz.enc", ".sha256")).unlink(missing_ok=True)
+          PY
+          git config user.name "dark-osint-backup-bot"
+          git config user.email "backup@localhost"
+          git add -A
+          git commit -m "backup $NAME (verified, encrypted)" || echo "nothing to commit"
+          git push
+        env:
+          BACKUP_REPO_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
+
+      - name: Telegram alert (Egyptian) — success
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_OWNER_ID}" \
+            -d text="✅ النسخ الاحتياطي خلّص بنجاح: ${{ steps.build.outputs.name }} — الأرشيف اتحقق منه واتشفّر واترفع لمخزن النسخ الخاص."
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_OWNER_ID: ${{ secrets.TELEGRAM_OWNER_ID }}
+
+      - name: Telegram alert (Egyptian) — failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_OWNER_ID}" \
+            -d text="⚠️ النسخ الاحتياطي فشل المرة دي. النسخ السليمة القديمة زي ما هي وماتمسحش منها حاجة. راجع تشغيل الـ workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_OWNER_ID: ${{ secrets.TELEGRAM_OWNER_ID }}

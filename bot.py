@@ -53,6 +53,7 @@ def tool_card(name):
 GHM=[('👤 حساب مستخدم','user','اكتب اسم المستخدم على جيت هب (مثال: torvalds)'),('📦 مستودعات مستخدم','repos','اكتب اسم المستخدم (مثال: torvalds)'),('ℹ️ معلومات مستودع','repo','اكتب المستودع بالشكل صاحب/اسم (مثال: torvalds/linux)'),('🕒 آخر التعديلات','commits','اكتب المستودع بالشكل صاحب/اسم'),('🔑 فحص ملفات حساسة','files','اكتب المستودع بالشكل صاحب/اسم (بفحص الأسماء فقط)')]
 PEND={}
 AN={}
+PG_CACHE={}
 def gh_kb(): return mk(grid([x[0] for x in GHM]+['📧 فحص ظهور إيميلي','📂 مستودعاتي','🔎 فحص أسرار مستودعاتي'])+[[BK_MAIN]])
 def gh_route(chat,t):
     t=t.strip()
@@ -70,6 +71,57 @@ def gh_run(cmd,arg):
     try: return gh.run(cmd,arg) or 'أمر غير معروف.'
     except (LookupError,RuntimeError) as e: return str(e)
     except Exception as e: print('gh err',type(e).__name__,flush=True); return 'حصلت مشكلة، جرب تاني بعد شوية.'
+PG_FAIL='مش قادر أجيب باقي النتائج دلوقتي — النتائج الكاملة موجودة في الملف اللي اتبعت في رسالة الفحص.'
+def _pg_answer(text):
+    cbid=getattr(TL,'cbid',None)
+    if cbid:
+        try: call('answerCallbackQuery',{'callback_query_id':cbid,'text':text})
+        except Exception: pass
+def _pg_fetch(run_id):
+    if run_id in PG_CACHE: return PG_CACHE[run_id]
+    import an
+    lines=None
+    try:
+        j=an.gh_api('actions/runs/%s/artifacts'%run_id)
+        arts=[a for a in ((j or {}).get('artifacts') or []) if not a.get('expired')]
+        arts.sort(key=lambda a: 0 if (a.get('name','').startswith('audit-') or 'findings' in a.get('name','')) else 1)
+        for a in arts:
+            b=an.artifact_file(a['id'],'findings.txt')
+            if b:
+                ls=b.decode('utf-8','replace').splitlines()
+                while ls and not ls[-1].strip(): ls.pop()
+                if ls: lines=ls; break
+    except Exception: lines=None
+    if lines:
+        if len(PG_CACHE)>20: PG_CACHE.clear()
+        PG_CACHE[run_id]=lines
+    return lines
+def _pg_page(chat,data):
+    try:
+        _p=data.split(':'); run_id=_p[1]; page=int(_p[2])
+        if not run_id.isdigit(): raise ValueError('run')
+    except Exception:
+        _pg_answer('الزر ده قديم أو غير صالح.'); return
+    lines=_pg_fetch(run_id)
+    if not lines:
+        _pg_answer('مش قادر أجيب باقي النتائج دلوقتي.')
+        return send(chat,PG_FAIL)
+    pages=(len(lines)+9)//10; page=max(1,min(page,pages))
+    text='📊 النتائج — صفحة %d من %d\n\n%s'%(page,pages,'\n'.join(lines[(page-1)*10:page*10]))
+    if len(text)>4000: text=text[:3990].rsplit('\n',1)[0]
+    row=[]
+    if page>1: row.append({'text':'⏮ رجوع','callback_data':'pg:%s:%d'%(run_id,page-1)})
+    row.append({'text':'%d/%d'%(page,pages),'callback_data':'pgn'})
+    if page<pages: row.append({'text':'التالي ⏭','callback_data':'pg:%s:%d'%(run_id,page+1)})
+    kb={'inline_keyboard':[row]}
+    _pg_answer('صفحة %d من %d'%(page,pages))
+    mid=getattr(TL,'cbmid',None)
+    if mid:
+        try:
+            call('editMessageText',{'chat_id':chat,'message_id':mid,'text':text,'disable_web_page_preview':'true','reply_markup':json.dumps(kb)})
+            return
+        except Exception: pass
+    return send(chat,text,kb)
 def save_rep(tool,target,text):
     c=db(); c.execute('create table if not exists reports(id integer primary key autoincrement, ts text, tool text, target text, summary text)')
     c.execute('insert into reports(ts,tool,target,summary) values(?,?,?,?)',(now(),tool,(target or '')[:120],text)); c.commit()
@@ -125,6 +177,8 @@ def menu():
     for i in range(0,len(ks),2): rows.append([{'text':'🔧 '+CAT[k],'callback_data':'c:'+k} for k in ks[i:i+2]])
     return {'inline_keyboard':rows}
 def handle_cb(chat,data):
+    if data=='pgn': _pg_answer('دي علامة رقم الصفحة بس — دوس «التالي» أو «رجوع» عشان تتنقل بين النتائج.'); return
+    if data.startswith('pg:'): return _pg_page(chat,data)
     TL.markup=BACK
     try:
         if data=='s:home': TL.markup=None; return send(chat,WELCOME,main_menu())
@@ -616,9 +670,12 @@ def process(u):
     if cb:
         m=cb.get('message') or {}
         if cb.get('from',{}).get('id')!=OWNER or m.get('chat',{}).get('type')!='private': return
-        try: call('answerCallbackQuery',{'callback_query_id':cb['id']})
-        except Exception: pass
-        try: handle_cb(m['chat']['id'],cb.get('data',''))
+        _data=cb.get('data','')
+        TL.cbid=cb['id']; TL.cbmid=m.get('message_id')
+        if not (_data.startswith('pg:') or _data=='pgn'):
+            try: call('answerCallbackQuery',{'callback_query_id':cb['id']})
+            except Exception: pass
+        try: handle_cb(m['chat']['id'],_data)
         except Exception as e: send(m['chat']['id'],'تعذر تنفيذ الأمر الآن، حاول بعد دقيقة. إن تكرر استخدم /help'); print('cb err',type(e).__name__,flush=True)
         return
     m=u.get('message') or {}

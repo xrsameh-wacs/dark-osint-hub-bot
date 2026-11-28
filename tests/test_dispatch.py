@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -124,6 +125,48 @@ class DispatchTest(unittest.TestCase):
                               env=env, timeout=120)
         self.assertEqual(proc.returncode, 2)
         self.assertFalse(os.path.exists(out))
+
+
+class FullscanRoutingTest(unittest.TestCase):
+    """`/fullscan` must go to the parallel workflow, single tools to the old one."""
+
+    def route(self, tool):
+        import an
+        seen = {}
+
+        def recorder(req, timeout=None):
+            seen['url'] = req.full_url
+            seen['body'] = json.loads(req.data.decode())
+            return _Accepted()
+
+        real = urllib.request.urlopen
+        urllib.request.urlopen = recorder
+        try:
+            with unittest.mock.patch.dict(os.environ,
+                                          {'GH_ACTIONS_TOKEN': 'tok', 'SCAN_KEY': KEY}):
+                err = an.dispatch(tool, 'example.com')
+        finally:
+            urllib.request.urlopen = real
+        return err, seen
+
+    def test_full_uses_the_parallel_workflow(self):
+        err, seen = self.route('full')
+        self.assertIsNone(err)
+        self.assertTrue(seen['url'].endswith('/actions/workflows/fullscan.yml/dispatches'),
+                        seen['url'])
+        self.assertEqual(seen['body']['inputs']['tool'], 'full')
+
+    def test_single_tool_keeps_the_old_workflow(self):
+        err, seen = self.route('nuclei')
+        self.assertIsNone(err)
+        self.assertTrue(seen['url'].endswith('/actions/workflows/scan.yml/dispatches'),
+                        seen['url'])
+
+    def test_payload_carries_a_signature(self):
+        _, seen = self.route('full')
+        inputs = seen['body']['inputs']
+        self.assertEqual(sorted(inputs), ['domain', 'sig', 'tool', 'ts'])
+        self.assertRegex(inputs['sig'], r'^[0-9a-f]{64}$')
 
 
 if __name__ == '__main__':

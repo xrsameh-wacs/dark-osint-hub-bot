@@ -422,15 +422,16 @@ def audit(c,event,domain,detail):
 def sign(tool,domain,ts):
     k=(os.environ.get('SCAN_KEY') or '').encode()
     return hmac.new(k,('%s|%s|%s'%(tool,domain,ts)).encode(),hashlib.sha256).hexdigest() if k else None
-def dispatch(tool,domain,job_user=None):
+def dispatch(tool,domain,job_user=None,wf=None):
+    if not wf: wf = 'fullscan.yml' if tool=='full' else 'scan.yml'
     tok=os.environ.get('GH_ACTIONS_TOKEN','').strip(); ts=str(int(time.time())); sg=sign(tool,domain,ts)
     if not tok or not sg: return 'الفحص النشط لسه مش متفعل (مفتاح التشغيل أو التوقيع مش مضاف).'
     body=json.dumps({'ref':'main','inputs':{'tool':tool,'domain':domain,'ts':ts,'sig':sg}}).encode()
-    r=urllib.request.Request('https://api.github.com/repos/xrsameh-wacs/osint-scanner/actions/workflows/scan.yml/dispatches',body,{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'})
+    r=urllib.request.Request('https://api.github.com/repos/xrsameh-wacs/osint-scanner/actions/workflows/%s/dispatches'%wf,body,{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'})
     try:
         urllib.request.urlopen(r,timeout=20)
         if job_user is not None:
-            try: job_open(job_user,'full' if tool=='full' else 'scan',tool,domain,'scan.yml')
+            try: job_open(job_user,'full' if tool=='full' else 'scan',tool,domain,wf)
             except Exception: pass
         return None
     except urllib.error.HTTPError as e: return 'GitHub رفض تشغيل الفحص (كود %d).'%e.code

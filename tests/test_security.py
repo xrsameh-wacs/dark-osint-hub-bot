@@ -506,6 +506,153 @@ class PinningProxyTest(unittest.TestCase):
         self.assertIn(b'403', head.split(b'\r\n')[0])
 
 
+class FullProfileTest(unittest.TestCase):
+    """Every opt-in extra must be off by default and switchable from the bot."""
+
+    TARGET = 'https://shop.example.com/'
+    RESOLVED = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 0))]
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix='tools-')
+        _fake_tools(self.tmp)
+
+    def scan(self, opts=None):
+        s = _FakeScanner(self.TARGET, pentest.Scope(['example.com']), opts)
+        calls = []
+
+        def record(argv, **kw):
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 1, b'', b'')
+
+        env = dict(os.environ, PATH=self.tmp + os.pathsep + os.environ.get('PATH', ''))
+        with unittest.mock.patch.dict(os.environ, env, clear=False):
+            with unittest.mock.patch('socket.getaddrinfo', return_value=self.RESOLVED):
+                with unittest.mock.patch('subprocess.run', side_effect=record):
+                    pentest.check_external(s)
+        return s, calls
+
+    def test_extras_are_off_by_default(self):
+        for key in ('full_severities', 'wide_ports', 'zap_active', 'takeover_check'):
+            self.assertFalse(pentest.DEFAULT_OPTIONS[key], key)
+
+    def test_default_profile_keeps_the_short_port_list(self):
+        _, calls = self.scan()
+        nmap = [c for c in calls if os.path.basename(c[0]) == 'nmap'][0]
+        ports = nmap[nmap.index('-p') + 1].split(',')
+        self.assertEqual(len(ports), 7)
+        self.assertEqual(nmap[nmap.index('--host-timeout') + 1], '45s')
+
+    def test_wide_ports_expands_the_nmap_list(self):
+        _, calls = self.scan({'wide_ports': True})
+        nmap = [c for c in calls if os.path.basename(c[0]) == 'nmap'][0]
+        ports = nmap[nmap.index('-p') + 1].split(',')
+        self.assertGreater(len(ports), 90)
+        self.assertIn('3306', ports)
+        self.assertEqual(nmap[nmap.index('--host-timeout') + 1], '180s')
+        self.assertEqual(nmap[-1], '93.184.216.34')      # still the pinned address
+
+    def test_full_severities_widens_nuclei(self):
+        _, calls = self.scan({'full_severities': True})
+        nuclei = [c for c in calls if os.path.basename(c[0]) == 'nuclei'][0]
+        self.assertEqual(nuclei[nuclei.index('-severity') + 1],
+                         'critical,high,medium,low,info')
+
+    def test_nuclei_stays_narrow_by_default(self):
+        _, calls = self.scan()
+        nuclei = [c for c in calls if os.path.basename(c[0]) == 'nuclei'][0]
+        self.assertEqual(nuclei[nuclei.index('-severity') + 1], 'critical,high,medium')
+
+
+class TakeoverTest(unittest.TestCase):
+    def scanner(self, subs, opts=None):
+        s = _FakeScanner('https://example.com/', pentest.Scope(['example.com']), opts)
+        s.recon.subdomains = subs
+        return s
+
+    def test_dangling_cname_is_flagged_and_verified(self):
+        s = self.scanner(['shop.example.com'], {'takeover_check': True})
+        dns = {'shop.example.com': {'CNAME': ['old.github.io.']}, 'old.github.io': {}}
+        with unittest.mock.patch.object(pentest, 'dns_lookup',
+                                        side_effect=lambda h: dns.get(h, {})):
+            pentest.check_takeover(s)
+        self.assertEqual([f['kind'] for f in s.added], ['subdomain_takeover'])
+        self.assertTrue(s.added[0]['verified'])
+        self.assertIn('ساقط', s.added[0]['evidence'])
+
+    def test_live_cname_is_reported_as_unverified(self):
+        s = self.scanner(['shop.example.com'], {'takeover_check': True})
+        dns = {'shop.example.com': {'CNAME': ['alive.github.io.']},
+               'alive.github.io': {'A': ['185.199.108.153']}}
+        with unittest.mock.patch.object(pentest, 'dns_lookup',
+                                        side_effect=lambda h: dns.get(h, {})):
+            pentest.check_takeover(s)
+        self.assertFalse(s.added[0]['verified'])
+
+    def test_out_of_domain_subdomains_are_ignored(self):
+        s = self.scanner(['evil.test', 'other.example.com'], {'takeover_check': True})
+        dns = {'other.example.com': {'CNAME': ['old.github.io.']}, 'old.github.io': {}}
+        with unittest.mock.patch.object(pentest, 'dns_lookup',
+                                        side_effect=lambda h: dns.get(h, {})):
+            pentest.check_takeover(s)
+        self.assertEqual([f['url'] for f in s.added], ['http://other.example.com/'])
+
+    def test_disabled_by_default(self):
+        s = self.scanner(['shop.example.com'])
+        pentest.check_takeover(s)
+        self.assertEqual(s.added, [])
+        self.assertIn('غير مفعّل', ' '.join(s.notes))
+
+    def test_non_provider_cname_is_ignored(self):
+        s = self.scanner(['shop.example.com'], {'takeover_check': True})
+        dns = {'shop.example.com': {'CNAME': ['internal.example.net.']}}
+        with unittest.mock.patch.object(pentest, 'dns_lookup',
+                                        side_effect=lambda h: dns.get(h, {})):
+            pentest.check_takeover(s)
+        self.assertEqual(s.added, [])
+
+
+class ProfileSwitchTest(unittest.TestCase):
+    def options(self, profile):
+        import bot
+        with unittest.mock.patch.dict(os.environ,
+                                       {'PENTEST_PROFILE': profile, 'TELEGRAM_TOKEN': '0:ci'}):
+            # the deployment other tests may set these; the profile test wants defaults
+            os.environ.pop('PENTEST_MAX_REQUESTS', None)
+            os.environ.pop('PENTEST_ALLOW_PRIVATE', None)
+            return bot.pt_options()
+
+    def test_safe_profile_keeps_every_extra_off(self):
+        opts = self.options('')
+        for key in ('allow_upload', 'rate_limit_probe', 'full_severities',
+                    'wide_ports', 'zap_active', 'takeover_check'):
+            self.assertFalse(opts[key], key)
+        self.assertEqual(opts['max_requests'], 900)
+
+    def test_full_profile_turns_them_all_on(self):
+        opts = self.options('full')
+        for key in ('allow_upload', 'rate_limit_probe', 'full_severities',
+                    'wide_ports', 'zap_active', 'takeover_check'):
+            self.assertTrue(opts[key], key)
+        self.assertEqual(opts['max_requests'], 1500)
+        self.assertFalse(opts['allow_private'])      # private ranges stay blocked
+
+
+class FullWorkflowTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = Path(os.path.join(ROOT, 'deploy', 'pentest.yml')).read_text()
+
+    def test_zap_runs_full_scan_only_when_the_job_asks(self):
+        self.assertIn('zap-full-scan.py', self.text)
+        self.assertIn('zap-baseline.py', self.text)
+        self.assertIn('zap_mode=%s', self.text)
+        self.assertIn('ZAP_MODE: ${{ steps.job.outputs.zap_mode }}', self.text)
+
+    def test_pinning_survives_the_active_mode(self):
+        self.assertIn('--add-host "$TARGET_HOST:$PINNED_IP"', self.text)
+
+
+
 class ExternalToolWorkflowTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -599,15 +599,31 @@ def pt_authorized(c, host):
     return None
 
 
-def pt_options(full=False):
+def pt_full_profile():
+    return (os.environ.get('PENTEST_PROFILE') or '').strip().lower() == 'full'
+
+
+def pt_options(full=None):
     import pentest
-    opts = {'max_requests': int(os.environ.get('PENTEST_MAX_REQUESTS', '900')),
+    if full is None:
+        full = pt_full_profile()
+    opts = {'max_requests': int(os.environ.get('PENTEST_MAX_REQUESTS',
+                                              '1500' if full else '900')),
             'rate': float(os.environ.get('PENTEST_RATE', '0.35')),
             'max_pages': 35, 'max_depth': 2, 'online_recon': True,
             'external_tools': True, 'allow_upload': bool(full),
             'rate_limit_probe': bool(full), 'accounts': pentest.accounts_from_env(),
+            'full_severities': bool(full), 'wide_ports': bool(full),
+            'zap_active': bool(full), 'takeover_check': bool(full),
             'allow_private': os.environ.get('PENTEST_ALLOW_PRIVATE') == '1'}
     return opts
+
+
+def pt_profile_line():
+    if not pt_full_profile():
+        return 'الملف: آمن — كشف فقط (ZAP baseline، منافذ محدودة، قوالب عالية الخطورة)'
+    return ('الملف: كامل — ZAP active scan، منافذ موسّعة، كل شدات nuclei، '
+            'اختطاف نطاقات فرعية، فحص رفع الملفات وقفل الحساب')
 
 
 def pt_store():
@@ -699,12 +715,13 @@ def pt_start(chat, raw):
     accounts = pentest.accounts_from_env()
     return send(chat,
                 '📋 تأكيد نطاق الفحص (صالح 30 دقيقة)\n\n'
-                'الهدف: %s\nالنطاق المصرح: %s\n'
+                'الهدف: %s\nالنطاق المصرح: %s\n%s\n'
                 'حد الطلبات: %d · المعدل: %s طلب/ثانية\n'
                 'حسابات اختبار للصلاحيات: %s\n\n'
                 'الفحص كشف فقط: مفيش شراء، مفيش حذف، مفيش تعديل بيانات. أي ثغرة لازم تتأكد بإعادة تحقق.\n'
                 'للتأكيد والبدء: /pentest confirm %s' %
-                (target, host, pt_options()['max_requests'], pt_options()['rate'],
+                (target, host, pt_profile_line(),
+                 pt_options()['max_requests'], pt_options()['rate'],
                  ('%d حساب' % len(accounts)) if accounts else 'مش مضبوطة (فحص IDOR هيتخطى)',
                  token))
 

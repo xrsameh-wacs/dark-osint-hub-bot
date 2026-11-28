@@ -271,7 +271,7 @@ HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مص
 💻 فحص كود ومختبر:
 /codescan — فحص كود الريبو بتاعك (Semgrep وTrivy وGitleaks)
 /bandit /pipaudit /osv /syft /grype /checkov /semgrep /trivy /gitleaks — بتشغل فحص الكود
-/lab — مختبر Staging (localhost وبيانات وهمية)
+/lab — المختبر الدفاعي: تطبيق وهمي على localhost بيتفحص بمحطات دفاعية (ويب وشبكة وكود وحاوية ونظام) على GitHub Actions
 
 🔎 استطلاع وحوادث:
 /incidents [عدد] — آخر الحوادث المسجلة (افتراضي 10) مع المصدر والتاريخ
@@ -491,7 +491,7 @@ def handle(chat,text):
     if cmd=='/lab':
         import an
         e=an.dispatch_wf('lab.yml'); an.audit(db(),'lab' if not e else 'lab_failed','localhost-lab',e or 'ok')
-        return send(chat,e if e else '🧪 بدأ المختبر (تطبيق وقاعدة بيانات وهميين على localhost جوه GitHub Actions، من غير أي دومين). النتيجة هتجيلك هنا، وتتابعها بـ /jobs.')
+        return send(chat,e if e else '🧪 المختبر الدفاعي بدأ — تطبيق وهمي وبيانات وهمية على localhost جوه GitHub Actions، من غير أي دومين خارجي. النتيجة هتجيلك هنا، وتتابعها بـ /jobs.\n\nالمحطات اللي هتشتغل:\n🌐 الويب والشبكة: Nmap بسكربتات NSE • OWASP ZAP فحص كامل • Nuclei بكل القوالب • Nikto • ffuf بقايمة مسارات كبيرة • WhatWeb لبصمة التقنيات • wafw00f لكشف WAF • testssl على نسخة HTTPS محلية • محطة الترويسات والكوكيز (هيدرز أمان وأعلام كوكيز وCORS)\n💻 الكود (على سورس تطبيق المعمل نفسه): Semgrep بقواعد موسعة • Bandit • Gitleaks • Trivy • OSV-Scanner • Dependency-Check • retire.js\n🐳 الحاوية والنظام: Trivy لصورة الحاوية • Lynis لتدقيق التصليب • YARA لفحص ملفات المعمل\n🗄 واختبار ذاتي لنسخ احتياطي واسترجاع قاعدة البيانات الوهمية. التشغيل بياخد وقت (ممكن يوصل لساعة أو أكتر) عشان عدد المحطات كبير.')
     if cmd=='/username':
         import an
         u=arg.strip()

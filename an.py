@@ -215,6 +215,7 @@ TXT={'Have I Been Pwned':('pwned','ابعتلي الباسورد (أو SHA-1 ب�
  'Nuclei':('dom','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). هعمل فحص سلبي خفيف وأديك درجة ونصايح.'),
  'theHarvester':('subs','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). هجيبلك النطاقات الفرعية من شهادات SSL العلنية.'),
  'Amass':('subs','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). هجيبلك النطاقات الفرعية من شهادات SSL العلنية.'),
+ 'Maigret':('user','اكتب اسم المستخدم (حروف وأرقام و. و- و_ بس). هدوّر بيه على حسابات علنية بنفس الاسم في أهم 300 موقع عن طريق Maigret على GitHub Actions، والنتيجة توصلك هنا. البحث لأسماء تخصك أو معاك تصريح بفحصها بس.'),
  'subfinder':('subs','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). هجيبلك النطاقات الفرعية من شهادات SSL العلنية.'),
  'TruffleHog':('sec','ابعت نص أو ملف كود وأفحصه عن مفاتيح وأسرار مكشوفة (بعرض النوع والسطر بس).'),
  'Semgrep':('sec','ابعت نص أو ملف كود وأفحصه عن مفاتيح وأسرار مكشوفة (بعرض النوع والسطر بس).')}
@@ -317,7 +318,7 @@ RUN['Autopsy']=RUN['Volatility 3']
 TXT['OpenVAS / Greenbone']=('dom','اكتب الدومين (لازم يكون مضاف بـ /authdomain add). مفيش فحص ثغرات نشط، هعمل فحص سلبي لترويسات الأمان وأديك درجة ونصايح.')
 INEXTRA={'EXIF.tools':'فحص EXIF من 📷 افحص صورة','InVID-WeVerify':None,'Nmap':'/scan nmap دومين معتمد (على GitHub Actions)'}
 LAB={'Nmap','OpenVAS / Greenbone','Nuclei','Nikto','OWASP ZAP','Burp Suite','Wazuh','Suricata','Zeek','Volatility 3','Autopsy','CAPE Sandbox','BloodHound','sqlmap','Metasploit Framework','Hashcat','John the Ripper','Hydra','Trivy','MISP','OpenCTI','Ghidra','radare2','Wireshark'}
-NEVER={'Sherlock','Maigret','Maltego','Recon-ng','SpiderFoot','GeoSpy'}
+NEVER={'Sherlock','Maltego','Recon-ng','SpiderFoot','GeoSpy'}
 def status(n):
     if n in RUN or n in TXT or n in INEXTRA and INEXTRA[n]: return 'in'
     if n in NEVER: return 'never'
@@ -462,6 +463,18 @@ def dispatch_code():
     r=urllib.request.Request('https://api.github.com/repos/xrsameh-wacs/osint-scanner/actions/workflows/code.yml/dispatches',json.dumps({'ref':'main'}).encode(),{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'})
     try: urllib.request.urlopen(r,timeout=20); return None
     except urllib.error.HTTPError as e: return 'GitHub رفض التشغيل (كود %d).'%e.code
+    except Exception: return 'تعذر الوصول لـ GitHub الآن.'
+
+def sign_osint(username,ts):
+    k=(os.environ.get('SCAN_KEY') or '').encode()
+    return hmac.new(k,('maigret|%s|%s'%(username,ts)).encode(),hashlib.sha256).hexdigest() if k else None
+def dispatch_osint(username):
+    tok=os.environ.get('GH_ACTIONS_TOKEN','').strip(); ts=str(int(time.time())); sg=sign_osint(username,ts)
+    if not tok or not sg: return 'بحث اسم المستخدم لسه مش متفعل (مفتاح التشغيل أو التوقيع مش مضاف).'
+    body=json.dumps({'ref':'main','inputs':{'username':username,'ts':ts,'sig':sg}}).encode()
+    r=urllib.request.Request('https://api.github.com/repos/xrsameh-wacs/osint-scanner/actions/workflows/osint.yml/dispatches',body,{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'})
+    try: urllib.request.urlopen(r,timeout=20); return None
+    except urllib.error.HTTPError as e: return 'GitHub رفض تشغيل البحث (كود %d). لازم ملف osint.yml يكون مركب في ريبو الفاحص الأول.'%e.code
     except Exception: return 'تعذر الوصول لـ GitHub الآن.'
 
 # ---- P3/P4: registry-driven commands, jobs, persistent approvals (owner /approve only) ----

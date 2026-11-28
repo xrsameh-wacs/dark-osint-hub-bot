@@ -46,10 +46,64 @@ def cat_tools(cat):
     c=db(); return [r['name'] for r in c.execute('select name from tools where category=? order by name',(cat,)).fetchall()]
 def cat_kb(cat): return mk(grid(['🔧 '+n for n in cat_tools(cat)][:60])+[[BK_CAT,BK_MAIN]])
 def cats_kb(): return mk(grid(['📂 '+CAT[k] for k in CAT])+[[BK_MAIN]])
+# ---- بطاقات الأدوات (مواصفة إعادة التنظيم §4): اسم/وصف/بتعمل إيه/البيانات المطلوبة/النتيجة المتوقعة/API Key/تصريح ----
+KIND_CARD={
+ 'pwned':('بيفحص الباسورد في تسريبات معروفة (Pwned Passwords)','باسورد (يفضل قديم) أو SHA-1 بتاعه','عدد مرات ظهور الباسورد في تسريبات معروفة','مش محتاج','مفيش — الباسورد نفسه مبيتبعتش كامل (أول 5 حروف من الهاش بس)'),
+ 'kev':('بيدوّر على الثغرة في قائمة CISA KEV للثغرات المستغلة فعلياً، وبياناتها من NVD','رقم CVE (مثال: CVE-2021-44228)','هل الثغرة مستغلة فعلياً + بيانات NVD وCVSS','مش محتاج','مفيش'),
+ 'ioc':('بيدوّر على المؤشر في قواعد التهديد المحلية','IP أو دومين أو رابط أو CVE','مطابقات في قواعد التهديد المحلية (Feodo وOpenPhish وKEV)','مش محتاج للبحث المحلي','مفيش'),
+ 'idb':('بيجيب البيانات العامة المفهرسة لعنوان IP','عنوان IPv4','بيانات عامة مفهرسة: بورتات وأسماء مضيفين وثغرات مرتبطة','مش محتاج (Shodan InternetDB المجانية)','مفيش'),
+ 'dom':('بيفحص ترويسات أمان الدومين بشكل سلبي','دومين معتمد','فحص سلبي لترويسات الأمان + درجة من 100 ونصايح','مش محتاج','لازم الدومين يكون معتمد بـ /authdomain add'),
+ 'subs':('بيجيب النطاقات الفرعية من شهادات SSL العلنية','دومين معتمد','قائمة النطاقات الفرعية من شهادات SSL العلنية (crt.sh)','مش محتاج','لازم الدومين يكون معتمد'),
+ 'user':('بيدوّر على حسابات عامة بنفس اسم المستخدم','اسم مستخدم (حروف وأرقام و. و- و_ بس)','حسابات عامة بنفس الاسم في أهم 300 موقع (Maigret)','مش محتاج','لأسماء تخصك أو معاك تصريح بفحصها بس'),
+ 'sec':('بيفحص النص أو الكود عن أنماط مفاتيح وأسرار معروفة','نص أو ملف كود','أنماط أسرار مكتشفة (النوع ورقم السطر بس، من غير القيمة)','مش محتاج للفحص السريع','مفيش — ابعت كودك انت بس'),
+ 'attack':('بيجيب وصف تقنية هجوم من MITRE ATT&CK','اسم أو رقم تقنية (مثال: T1059 أو phishing)','وصف التقنية + التكتيكات والمنصات','مش محتاج','مفيش'),
+ 'harv':('بيشغّل theHarvester لجمع بيانات عامة عن الدومين','دومين معتمد','إيميلات ونطاقات فرعية ومضيفين من مصادر عامة','مش محتاج (مصادر لا تحتاج مفاتيح)','لازم الدومين يكون معتمد'),
+ 'censys':('خدمة بحث في أصول الإنترنت والشهادات (مش متاحة)','—','الخدمة مش متاحة على البوت','محتاج مفتاح API خاص — مش مضاف','—'),
+ 'ti_abuse':('بيجيب سمعة عنوان IP من AbuseIPDB','عنوان IPv4','درجة خطورة 0–100 + بلاغات إساءة وآخر بلاغ والشركة والدولة','محتاج مفتاح API مجاني (ABUSEIPDB_API_KEY) — الحد المجاني 1000 فحص/يوم','مفيش'),
+ 'ti_otx':('بيجيب تقارير التهديد المجتمعية (Pulses) المرتبطة بالمؤشر من AlienVault OTX','IP أو دومين أو هاش ملف (MD5/SHA-1/SHA-256)','تقارير Pulses المرتبطة + درجة السمعة','محتاج مفتاح API مجاني (OTX_API_KEY) — حساب مجاني بحدود سخية','مفيش'),
+ 'plat':('منصة فحص ثغرات (مش بتشتغل من البوت)','—','المنصة مش بتشتغل من البوت','—','محتاج سيرفر خاص بيك'),
+}
+RUN_CARD={
+ 'Ghidra':('بيعمل تحليل ساكن خفيف للملف من غير ما يشغّله','ملف (📎 File، حتى 20 ميجا)','نوع الملف وهاشاته وأقسامه ودوال مستوردة ونصوصه + درجة اشتباه','مش محتاج','مفيش — ابعت ملفات تخصك بس'),
+ 'TruffleHog':('بيفحص النص أو الكود عن أنماط مفاتيح وأسرار معروفة','نص أو ملف كود','أنماط أسرار مكتشفة (النوع ورقم السطر بس، من غير القيمة)','مش محتاج للفحص السريع','مفيش — ابعت كودك انت بس'),
+ 'Semgrep':('بيفحص النص أو الكود عن أنماط مفاتيح وأسرار معروفة','نص أو ملف كود','أنماط أسرار مكتشفة (النوع ورقم السطر بس، من غير القيمة)','مش محتاج للفحص السريع','مفيش — ابعت كودك انت بس'),
+ 'Trivy':('بيفحص مكتبات مشروعك في قاعدة ثغرات OSV.dev','محتوى requirements.txt (مكتبة==نسخة) أو package.json كنص أو ملف','المكتبات اللي فيها ثغرات معروفة + أرقام الثغرات','مش محتاج','مفيش'),
+ 'Sigma':('بيطابق أسطر اللوج على قواعد كشف أساسية، أو بيشغّل sigma-cli على ملف قاعدة','أسطر لوج (نص أو ملف .txt) أو ملف قاعدة Sigma (.yml)','مطابقات قواعد الكشف، أو تحقق وتحويل القاعدة بـ sigma-cli','مش محتاج','مفيش'),
+ 'Wazuh':('بيطابق أسطر اللوج على قواعد كشف أساسية مدمجة (نسخة خفيفة — مش منصة Wazuh)','أسطر لوج (نص أو ملف)','مطابقات قواعد الكشف الأساسية','مش محتاج','مفيش'),
+ 'Volatility 3':('بيعمل فرز جنائي خفيف للملف من غير ما يشغّله','ملف (📎 File، حتى 20 ميجا)','نوع الملف وهاشاته ونصوصه وروابطه + درجة اشتباه','مش محتاج','مفيش — ابعت ملفات تخصك بس'),
+ 'Autopsy':('بيعمل فرز جنائي خفيف للملف من غير ما يشغّله','ملف (📎 File، حتى 20 ميجا)','نوع الملف وهاشاته ونصوصه وروابطه + درجة اشتباه','مش محتاج','مفيش — ابعت ملفات تخصك بس'),
+}
+FILE_CARD={
+ 'Wireshark':('بيشغّل tshark الحقيقي (بتاع Wireshark) على ملف تسجيل الشبكة','ملف تسجيل شبكة .pcap أو .pcapng (حتى 10 ميجا)','هرمية البروتوكولات وأهم المحادثات واستعلامات DNS وخوادم HTTP وSNI','مش محتاج','مفيش — ابعت ملفات تخصك بس'),
+ 'Zeek':('بيشغّل Zeek الحقيقي على ملف تسجيل الشبكة','ملف تسجيل شبكة .pcap أو .pcapng (حتى 10 ميجا)','ملخص سجلات الاتصالات وDNS وHTTP','مش محتاج','مفيش — ابعت ملفات تخصك بس'),
+ 'Suricata':('بيشغّل Suricata الحقيقي بوضع عدم الاتصال على ملف تسجيل الشبكة','ملف تسجيل شبكة .pcap أو .pcapng (حتى 10 ميجا)','تنبيهات Suricata بقواعده','مش محتاج','مفيش — ابعت ملفات تخصك بس'),
+ 'ExifTool':('بيشغّل ExifTool الحقيقي على الملف','أي ملف: مستند أو PDF أو أرشيف أو صورة (حتى 10 ميجا)','البيانات الوصفية كاملة + تنبيه واضح لو فيه موقع GPS','مش محتاج','مفيش — ابعت ملفات تخصك بس'),
+ 'YARA':('بيشغّل YARA الحقيقي بقواعد عامة على الملف من غير ما يشغّله','أي ملف (حتى 10 ميجا)','القواعد اللي اتطابقت (Yara-Rules)','مش محتاج','مفيش — ابعت ملفات تخصك بس'),
+ 'radare2':('بيشغّل rabin2 الحقيقي (من radare2) على الملف التنفيذي من غير ما يشغّله','ملف تنفيذي (حتى 10 ميجا)','معلومات الملف والدوال المستوردة والنصوص','مش محتاج','مفيش — ابعت ملفات تخصك بس'),
+}
+KEY_OVERRIDE={'VirusTotal':'البحث الحي في VirusTotal من /ioc محتاج مفتاح API مجاني — من غيره البحث في القواعد المحلية بس'}
+def tool_intro(name):
+    import an
+    if name in an.TXT: k=an.TXT[name][0]; prompt=an.TXT[name][1]; where='جوه البوت (فوري)'
+    elif name in an.FILE_TOOLS: k='afile'; prompt=an.FILE_TOOLS[name][1]; where='على GitHub Actions (بياخد دقايق)'
+    elif name in an.RUN: k='file'; prompt=an.RUN[name][1]; where='جوه البوت (فوري)'
+    else: return None
+    if k=='afile': what,inp,res,key,perm=FILE_CARD[name]
+    elif k=='file': what,inp,res,key,perm=RUN_CARD[name]
+    else:
+        what,inp,res,key,perm=KIND_CARD[k]
+        key=KEY_OVERRIDE.get(name,key)
+    desc=AR.get(name,'لا يوجد وصف')
+    return '🔧 %s\n%s\n\n📌 بتعمل إيه؟ %s\n📥 البيانات المطلوبة: %s\n📤 النتيجة المتوقعة: %s\n📍 التشغيل: %s\n🔑 API Key: %s\n🛡 تصريح: %s\n\n▶️ %s'%(name,desc,what,inp,res,where,key,perm,prompt)
 def tool_card(name):
+    import an
     c=db(); r=c.execute('select name,category,url from tools where name=?',(name,)).fetchone()
     if not r: return None
-    return '🔧 %s [%s]\n%s\n%s'%(r['name'],CAT.get(r['category'],r['category']),AR.get(r['name'],'لا يوجد وصف'),r['url'])
+    intro=tool_intro(name)
+    if intro: return intro
+    st=an.status(name)
+    note={'never':'⛔ مش هتتبني (ممنوعة حسب سياسة البوت أو تتبع أشخاص)','plat':'🖥 منصة محتاجة سيرفر خاص بيك — مش بتشتغل من البوت','lab':'🧪 متاحة في المختبر المحلي بس','link':'🔗 روابط خارجية فقط — مفيش API مجاني رسمي'}.get(st,'')
+    return '🔧 %s [%s]\n%s\n%s\n%s'%(r['name'],CAT.get(r['category'],r['category']),AR.get(r['name'],'لا يوجد وصف'),r['url'],note)
 GHM=[('👤 حساب مستخدم','user','اكتب اسم المستخدم على جيت هب (مثال: torvalds)'),('📦 مستودعات مستخدم','repos','اكتب اسم المستخدم (مثال: torvalds)'),('ℹ️ معلومات مستودع','repo','اكتب المستودع بالشكل صاحب/اسم (مثال: torvalds/linux)'),('🕒 آخر التعديلات','commits','اكتب المستودع بالشكل صاحب/اسم'),('🔑 فحص ملفات حساسة','files','اكتب المستودع بالشكل صاحب/اسم (بفحص الأسماء فقط)')]
 PEND={}
 AN={}
@@ -191,9 +245,8 @@ def kb_route(chat,t):
     if t.startswith('🔧 '):
         import an
         nm=t[2:].strip()
-        if nm in an.TXT and nm not in an.RUN: AN[chat]=nm; send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(nm,an.TXT[nm][1])); return True
-        if nm in an.RUN: AN[chat]=nm; send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(nm,an.RUN[nm][1])); return True
-        if nm in an.FILE_TOOLS: AN[chat]=nm; send(chat,'🔧 %s (بيشتغل على GitHub Actions)\n%s'%(nm,an.FILE_TOOLS[nm][1])); return True
+        if nm in an.TXT or nm in an.RUN or nm in an.FILE_TOOLS:
+            AN[chat]=nm; send(chat,tool_intro(nm) or '🔧 %s'%nm); return True
         card=tool_card(nm)
         if card: send(chat,card); return True
     return False
@@ -218,9 +271,8 @@ def handle_cb(chat,data):
             if _kind=='gh': gh_route(chat,'🐙 أدوات جيت هب'); return
             if _kind=='tool':
                 import an
-                if _val in an.TXT and _val not in an.RUN: AN[chat]=_val; return send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(_val,an.TXT[_val][1]),sec_kb(_sid))
-                if _val in an.RUN: AN[chat]=_val; return send(chat,'🔧 %s (بيشتغل جوه البوت)\n%s'%(_val,an.RUN[_val][1]),sec_kb(_sid))
-                if _val in an.FILE_TOOLS: AN[chat]=_val; return send(chat,'🔧 %s (بيشتغل على GitHub Actions)\n%s'%(_val,an.FILE_TOOLS[_val][1]),sec_kb(_sid))
+                if _val in an.TXT or _val in an.RUN or _val in an.FILE_TOOLS:
+                    AN[chat]=_val; return send(chat,tool_intro(_val) or '🔧 %s'%_val,sec_kb(_sid))
                 return send(chat,'الأداة دي مش متاحة من الزر دلوقتي.',sec_kb(_sid))
             return send(chat,_val,sec_kb(_sid))
         if data.startswith('s:') and data[2:] in SEC_TEXT: return send(chat,SEC_TEXT[data[2:]],sec_kb(data[2:]))

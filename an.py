@@ -360,7 +360,7 @@ def selftest(db,imgx=None,gh=None,domain_report=None):
        ('Sigma / Wazuh',lambda:'SSH' in sigma(b'Failed password for root\n'*6)),
        ('Trivy (OSV.dev)',lambda:'🔴' in trivy(b'requests==2.19.0\n')),
        ('Have I Been Pwned',lambda:'ظهر' in pwned(hashlib.sha1(b'password').hexdigest())),
-       ('Shodan / Censys (InternetDB)',lambda:'بورتات' in internetdb('8.8.8.8')),
+       ('Shodan (InternetDB)',lambda:'بورتات' in internetdb('8.8.8.8')),
        ('theHarvester / Amass / subfinder (crt.sh)',lambda:'النطاقات' in crtsh('example.com')),
        ('CISA KEV / MISP / OpenCTI / VirusTotal (قاعدة محلية)',lambda:dbq('select count(*) from incidents')>0 and dbq('select count(*) from indicators')>0),
        ('MITRE ATT&CK',lambda:dbq("select count(*) from incidents where kind='technique'")>0),

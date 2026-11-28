@@ -422,12 +422,17 @@ def audit(c,event,domain,detail):
 def sign(tool,domain,ts):
     k=(os.environ.get('SCAN_KEY') or '').encode()
     return hmac.new(k,('%s|%s|%s'%(tool,domain,ts)).encode(),hashlib.sha256).hexdigest() if k else None
-def dispatch(tool,domain):
+def dispatch(tool,domain,job_user=None):
     tok=os.environ.get('GH_ACTIONS_TOKEN','').strip(); ts=str(int(time.time())); sg=sign(tool,domain,ts)
     if not tok or not sg: return 'الفحص النشط لسه مش متفعل (مفتاح التشغيل أو التوقيع مش مضاف).'
     body=json.dumps({'ref':'main','inputs':{'tool':tool,'domain':domain,'ts':ts,'sig':sg}}).encode()
     r=urllib.request.Request('https://api.github.com/repos/xrsameh-wacs/osint-scanner/actions/workflows/scan.yml/dispatches',body,{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'})
-    try: urllib.request.urlopen(r,timeout=20); return None
+    try:
+        urllib.request.urlopen(r,timeout=20)
+        if job_user is not None:
+            try: job_open(job_user,'full' if tool=='full' else 'scan',tool,domain,'scan.yml')
+            except Exception: pass
+        return None
     except urllib.error.HTTPError as e: return 'GitHub رفض تشغيل الفحص (كود %d).'%e.code
     except Exception: return 'تعذر الوصول لـ GitHub الآن.'
 ATTEST='أقر بأني أملك الدومين ده أو معايا تصريح كتابي باختباره.'
@@ -480,23 +485,33 @@ def passive(d):
     if w: out.append(w)
     return '\n'.join(out)
 
-def dispatch_code():
+def dispatch_code(job_user=None):
     tok=os.environ.get('GH_ACTIONS_TOKEN','').strip()
     if not tok: return 'مفتاح التشغيل مش مضاف.'
     r=urllib.request.Request('https://api.github.com/repos/xrsameh-wacs/osint-scanner/actions/workflows/code.yml/dispatches',json.dumps({'ref':'main'}).encode(),{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'})
-    try: urllib.request.urlopen(r,timeout=20); return None
+    try:
+        urllib.request.urlopen(r,timeout=20)
+        if job_user is not None:
+            try: job_open(job_user,'code','codescan','dark-osint-hub-bot','code.yml')
+            except Exception: pass
+        return None
     except urllib.error.HTTPError as e: return 'GitHub رفض التشغيل (كود %d).'%e.code
     except Exception: return 'تعذر الوصول لـ GitHub الآن.'
 
 def sign_osint(username,ts):
     k=(os.environ.get('SCAN_KEY') or '').encode()
     return hmac.new(k,('maigret|%s|%s'%(username,ts)).encode(),hashlib.sha256).hexdigest() if k else None
-def dispatch_osint(username):
+def dispatch_osint(username,job_user=None):
     tok=os.environ.get('GH_ACTIONS_TOKEN','').strip(); ts=str(int(time.time())); sg=sign_osint(username,ts)
     if not tok or not sg: return 'بحث اسم المستخدم لسه مش متفعل (مفتاح التشغيل أو التوقيع مش مضاف).'
     body=json.dumps({'ref':'main','inputs':{'username':username,'ts':ts,'sig':sg}}).encode()
     r=urllib.request.Request('https://api.github.com/repos/xrsameh-wacs/osint-scanner/actions/workflows/osint.yml/dispatches',body,{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'})
-    try: urllib.request.urlopen(r,timeout=20); return None
+    try:
+        urllib.request.urlopen(r,timeout=20)
+        if job_user is not None:
+            try: job_open(job_user,'osint','maigret',username,'osint.yml')
+            except Exception: pass
+        return None
     except urllib.error.HTTPError as e: return 'GitHub رفض تشغيل البحث (كود %d). لازم ملف osint.yml يكون مركب في ريبو الفاحص الأول.'%e.code
     except Exception: return 'تعذر الوصول لـ GitHub الآن.'
 
@@ -552,12 +567,17 @@ def gh_upload_file(data,filename):
 def sign_files(tool,ref,ts):
     k=(os.environ.get('SCAN_KEY') or '').encode()
     return hmac.new(k,('files|%s|%s|%s'%(tool,ref,ts)).encode(),hashlib.sha256).hexdigest() if k else None
-def dispatch_files(tool,ref,name):
+def dispatch_files(tool,ref,name,job_user=None):
     tok=os.environ.get('GH_ACTIONS_TOKEN','').strip(); ts=str(int(time.time())); sg=sign_files(tool,ref,ts)
     if not tok or not sg: return 'تشغيل أدوات الملفات لسه مش متفعل (مفتاح التشغيل أو التوقيع مش مضاف).'
     body=json.dumps({'ref':'main','inputs':{'tool':tool,'ref':ref,'name':name,'ts':ts,'sig':sg}}).encode()
     r=urllib.request.Request('https://api.github.com/repos/%s/actions/workflows/files.yml/dispatches'%GH_REPO,body,{'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'})
-    try: urllib.request.urlopen(r,timeout=20); return None
+    try:
+        urllib.request.urlopen(r,timeout=20)
+        if job_user is not None:
+            try: job_open(job_user,'files',tool,name,'files.yml')
+            except Exception: pass
+        return None
     except urllib.error.HTTPError as e: return 'GitHub رفض تشغيل أداة الملفات (كود %d). لازم ملف files.yml يكون مركب في ريبو الفاحص الأول.'%e.code
     except Exception: return 'تعذر الوصول لـ GitHub الآن.'
 def kev_lookup(term):
@@ -599,19 +619,79 @@ def kev_lookup(term):
 # ---- P3/P4: registry-driven commands, jobs, persistent approvals (owner /approve only) ----
 def gh_headers():
     return {'Authorization':'Bearer '+os.environ.get('GH_ACTIONS_TOKEN','').strip(),'Accept':'application/vnd.github+json','User-Agent':'osint-hub-bot','Content-Type':'application/json'}
-def dispatch_wf(wf):
+def dispatch_wf(wf,job_user=None):
     if not os.environ.get('GH_ACTIONS_TOKEN','').strip(): return 'مفتاح التشغيل مش مضاف.'
     r=urllib.request.Request('https://api.github.com/repos/%s/actions/workflows/%s/dispatches'%(GH_REPO,wf),json.dumps({'ref':'main'}).encode(),gh_headers())
-    try: urllib.request.urlopen(r,timeout=20); return None
+    try:
+        urllib.request.urlopen(r,timeout=20)
+        if job_user is not None:
+            try: job_open(job_user,'lab' if wf=='lab.yml' else 'scan',wf,'localhost-lab' if wf=='lab.yml' else wf,wf)
+            except Exception: pass
+        return None
     except urllib.error.HTTPError as e: return 'GitHub رفض التشغيل (كود %d).'%e.code
     except Exception: return 'تعذر الوصول لـ GitHub الآن.'
-def jobs_status(n=8):
+# ---- Job registry: per-user dispatched-run tracking, timeouts, cancel ----
+# A job is registered right after a successful workflow dispatch. Jobs are
+# swept on every read: anything past its per-kind timeout is marked
+# 'timeout'. /cancel asks GitHub to cancel the matching run (best effort —
+# the token may lack actions:write); if GitHub does not confirm, the job is
+# still marked cancelled bot-side and the user is told the result may arrive.
+JOB_TIMEOUTS={'scan':1800,'full':2700,'osint':900,'files':1200,'code':2400,'lab':6000}
+_JOB_AR={'queued':'في الانتظار','dispatched':'شغالة ⏳','cancelled':'ملغية ⛔','timeout':'انتهت مهلتها ⏱'}
+def _jobs_c(c):
+    c.execute('create table if not exists jobs(id integer primary key autoincrement, user text, kind text, tool text, target text, wf text, ts integer, status text, note text)')
+    return c
+def jobs_sweep(c=None):
+    from lib import db as _ldb
+    c=_jobs_c(c or _ldb()); nowt=int(time.time()); n=0
+    for r in c.execute("select id,kind,ts from jobs where status in ('queued','dispatched')").fetchall():
+        lim=JOB_TIMEOUTS.get(r[1],1800)
+        if nowt-r[2]>lim:
+            c.execute("update jobs set status='timeout', note=? where id=?",('عدّى الحد الزمني (%d دقيقة) من غير ما توصله نتيجة'%(lim//60),r[0])); n+=1
+    if n: c.commit()
+    return n
+def job_open(user,kind,tool,target,wf):
+    from lib import db as _ldb
+    c=_jobs_c(_ldb()); jobs_sweep(c)
+    cur=c.execute('insert into jobs(user,kind,tool,target,wf,ts,status) values(?,?,?,?,?,?,?)',(str(user),kind,tool,(target or '')[:120],wf,int(time.time()),'dispatched')); c.commit()
+    return cur.lastrowid
+def job_list(user,n=10):
+    from lib import db as _ldb
+    c=_jobs_c(_ldb()); jobs_sweep(c)
+    return c.execute('select * from jobs where user=? order by id desc limit ?',(str(user),n)).fetchall()
+def job_cancel(user,jid):
+    from lib import db as _ldb
+    c=_jobs_c(_ldb()); jobs_sweep(c)
+    r=c.execute('select * from jobs where id=? and user=?',(jid,str(user))).fetchone()
+    if not r: return 'مفيش مهمة بالرقم ده عندك — شوف الأرقام في /jobs.'
+    if r['status'] not in ('queued','dispatched'): return 'المهمة #%d حالتها «%s» — مفيش حاجة تتلغي.'%(jid,_JOB_AR.get(r['status'],r['status']))
+    ok=False
+    try:
+        j=gh_api('actions/workflows/%s/runs?per_page=10'%r['wf'])
+        for run in (j or {}).get('workflow_runs',[]):
+            import datetime as _dt
+            epoch=_dt.datetime.strptime(run.get('created_at',''),'%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=_dt.timezone.utc).timestamp()
+            if epoch>=r['ts']-120 and run.get('status')!='completed':
+                ok=gh_api_write('POST','actions/runs/%d/cancel'%run['id']) is not None
+                break
+    except Exception: ok=False
+    c.execute("update jobs set status='cancelled', note=? where id=?",(('GitHub أكد إلغاء التشغيل' if ok else 'اتعلّمت ملغية في البوت؛ طلب إلغاء GitHub ماتأكدش'),jid)); c.commit()
+    if ok: return '⛔ اتلغت المهمة #%d (%s على %s) — طلبت من GitHub يوقف التشغيل وأكد.'%(jid,r['tool'],r['target'])
+    return '⛔ اتعلّمت المهمة #%d (%s على %s) ملغية عندي في البوت. طلب الإلغاء من GitHub ماتأكدش، فلو التشغيل كان بدأ فعلاً ممكن توصل نتيجته — اعتبرها ملغية وتجاهلها.'%(jid,r['tool'],r['target'])
+def jobs_status(n=8,user=None):
+    head=''
+    if user is not None:
+        rows=job_list(user)
+        if rows:
+            import datetime as _dt
+            head='📋 مهامك المسجلة (للإلغاء: /cancel رقم):\n'+'\n'.join('• #%d %s على %s — %s (%s)'%(r['id'],r['tool'],r['target'],_JOB_AR.get(r['status'],r['status']),_dt.datetime.utcfromtimestamp(r['ts']).strftime('%H:%M')) for r in rows)+'\n\n'
+        else: head='📋 مفيش مهام مسجلة ليك لسه.\n\n'
     j=gh_api('actions/runs?per_page=%d'%n)
-    if not j: return 'تعذر قراءة المهام من GitHub الآن.'
+    if not j: return head+'تعذر قراءة المهام من GitHub الآن.'
     rs=j.get('workflow_runs',[])
-    if not rs: return 'مفيش مهام لسه.'
+    if not rs: return head+'مفيش مهام على GitHub لسه.'
     AR={'queued':'في الانتظار','in_progress':'شغال ⏳','completed':'خلص'}; CC={'success':'✅','failure':'❌','cancelled':'⛔'}
-    return '📋 آخر المهام (كل الـworkflows):\n'+'\n'.join('• %s #%s %s %s %sZ'%(r['name'],r['run_number'],AR.get(r['status'],r['status']),CC.get(r.get('conclusion') or '',''),r['created_at'][11:16]) for r in rs)
+    return head+'📋 آخر المهام (كل الـworkflows):\n'+'\n'.join('• %s #%s %s %s %sZ'%(r['name'],r['run_number'],AR.get(r['status'],r['status']),CC.get(r.get('conclusion') or '',''),r['created_at'][11:16]) for r in rs)
 def registry():
     d=gh_api('contents/registry.json')
     try: return json.loads(__import__('base64').b64decode(d['content']).decode())

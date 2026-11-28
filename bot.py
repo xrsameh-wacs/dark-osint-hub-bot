@@ -193,7 +193,7 @@ def an_text(chat,t):
         d=norm_domain(t)
         if not d: return send(chat,'دومين غير صالح.')
         if not db().execute('select 1 from authorized_domains where domain=?',(d,)).fetchone(): return send(chat,'الدومين غير مصرح به. أضفه أولا بـ /authdomain add دومين لو بتملكه أو معاك تصريح.')
-        e=an.dispatch_files('harvester', d, d); return send(chat, e if e else '🚀 بدأ theHarvester على %s على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق. /jobs للمتابعة.'%d)
+        e=an.dispatch_files('harvester', d, d, job_user=chat); return send(chat, e if e else '🚀 بدأ theHarvester على %s على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق. /jobs للمتابعة.'%d)
     if k=='ioc': return handle(chat,'/ioc '+t)
     if k=='dom': return handle(chat,'/domaincheck '+t)
     if k=='pwned': return send(chat,an.pwned(t))
@@ -357,6 +357,7 @@ HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مص
 /report [دومين] — آخر تقرير شامل
 /history [دومين] — سجل الفحوصات
 /jobs — حالة كل المهام
+/cancel رقم — إلغاء مهمة شغالة (الأرقام بتظهر في /jobs)
 /registry — سجل الأدوات وحالتها
 /inventory — جرد الأدوات: جوه البوت، تحتاج سيرفر، روابط
 /tools [فئة] — كتالوج أدوات الأمن مع وصف كل أداة
@@ -548,13 +549,17 @@ def handle(chat,text):
         return send(chat,an.verify_text(d))
     if cmd=='/jobs':
         import an
-        return send(chat,an.jobs_status())
+        return send(chat,an.jobs_status(user=chat))
+    if cmd=='/cancel':
+        import an
+        if not arg.isdigit(): return send(chat,'الاستخدام: /cancel رقم_المهمة\nالأرقام بتظهر في /jobs.')
+        return send(chat,an.job_cancel(chat,int(arg)))
     if cmd in('/registry','/toolsreg'):
         import an
         return send(chat,an.registry_text())
     if cmd=='/lab':
         import an
-        e=an.dispatch_wf('lab.yml'); an.audit(db(),'lab' if not e else 'lab_failed','localhost-lab',e or 'ok')
+        e=an.dispatch_wf('lab.yml',job_user=chat); an.audit(db(),'lab' if not e else 'lab_failed','localhost-lab',e or 'ok')
         return send(chat,e if e else '🧪 المختبر الدفاعي بدأ — تطبيق وهمي وبيانات وهمية على localhost جوه GitHub Actions، من غير أي دومين خارجي. النتيجة هتجيلك هنا، وتتابعها بـ /jobs.\n\nالمحطات اللي هتشتغل:\n🌐 الويب والشبكة: Nmap بسكربتات NSE • OWASP ZAP فحص كامل • Nuclei بكل القوالب • Nikto • ffuf بقايمة مسارات كبيرة • WhatWeb لبصمة التقنيات • wafw00f لكشف WAF • testssl على نسخة HTTPS محلية • محطة الترويسات والكوكيز (هيدرز أمان وأعلام كوكيز وCORS)\n💻 الكود (على سورس تطبيق المعمل نفسه): Semgrep بقواعد موسعة • Bandit • Gitleaks • Trivy • OSV-Scanner • Dependency-Check • retire.js\n🐳 الحاوية والنظام: Trivy لصورة الحاوية • Lynis لتدقيق التصليب • YARA لفحص ملفات المعمل\n🗄 واختبار ذاتي لنسخ احتياطي واسترجاع قاعدة البيانات الوهمية. التشغيل بياخد وقت (ممكن يوصل لساعة أو أكتر) عشان عدد المحطات كبير.')
     if cmd=='/username':
         import an
@@ -567,15 +572,15 @@ def handle(chat,text):
                 ago=(_dt.datetime.utcnow()-_dt.datetime.strptime(last[0],'%Y-%m-%dT%H:%M:%SZ')).total_seconds()
                 if 0<=ago<600: return send(chat,'⏳ استنى شوية: آخر بحث اسم مستخدم اتشغّل من %d ثانية. الحد الأدنى بين كل بحث والتاني 10 دقايق.'%int(ago))
             except Exception: pass
-        e=an.dispatch_osint(u); an.audit(c,'username_dispatch' if not e else 'username_dispatch_failed',u,e or 'ok')
+        e=an.dispatch_osint(u,job_user=chat); an.audit(c,'username_dispatch' if not e else 'username_dispatch_failed',u,e or 'ok')
         return send(chat,e if e else '🚀 بدأ بحث Maigret عن اسم المستخدم %s على GitHub Actions (أهم 300 موقع). النتيجة هتوصلك هنا خلال دقايق. /jobs لمتابعة المهام.'%u)
     import an as _an
     if cmd[1:] in _an.CODE_ALIAS:
-        e=_an.dispatch_code(); _an.audit(db(),'codescan' if not e else 'codescan_failed','xrsameh-wacs/dark-osint-hub-bot','via %s: %s'%(cmd,e or 'ok'))
+        e=_an.dispatch_code(job_user=chat); _an.audit(db(),'codescan' if not e else 'codescan_failed','xrsameh-wacs/dark-osint-hub-bot','via %s: %s'%(cmd,e or 'ok'))
         return send(chat,e if e else '🚀 %s بيشتغل ضمن فحص الكود الكامل على ريبوك (Semgrep وTrivy وGitleaks وBandit وpip-audit وOSV وSyft/Grype وCheckov). مفيش تشغيل منفرد للأداة، النتيجة بتيجي بسطر لكل أداة.'%cmd[1:])
     if cmd=='/codescan':
         import an
-        e=an.dispatch_code(); an.audit(db(),'codescan' if not e else 'codescan_failed','xrsameh-wacs/dark-osint-hub-bot',e or 'ok')
+        e=an.dispatch_code(job_user=chat); an.audit(db(),'codescan' if not e else 'codescan_failed','xrsameh-wacs/dark-osint-hub-bot',e or 'ok')
         return send(chat,e if e else '🚀 بدأ فحص الكود (Semgrep وTrivy وGitleaks) على الريبو بتاعك dark-osint-hub-bot. النتيجة (أعداد بس، من غير أسرار) هتوصلك هنا.')
     if cmd=='/scan':
         import an
@@ -589,7 +594,7 @@ def handle(chat,text):
                 an.audit(c,'scan_blocked',a[1],'tool=%s not approved'%a[0])
                 return send(chat,'🚫 الدومين ده مش معتمد. اعتمده الأول بـ /approve %s (إقرار ملكية/تصريح) أو أثبته بـ /verifydomain. مفيش فحص من غير كده.'%a[1])
             an.audit(c,'scan_dns_proof',a[1],'tool=%s via TXT'%a[0])
-        e=an.dispatch(a[0],a[1]); an.audit(db(),'scan_dispatch' if not e else 'scan_dispatch_failed',a[1],'tool=%s %s'%(a[0],e or 'ok'))
+        e=an.dispatch(a[0],a[1],job_user=chat); an.audit(db(),'scan_dispatch' if not e else 'scan_dispatch_failed',a[1],'tool=%s %s'%(a[0],e or 'ok'))
         return send(chat,e if e else '🚀 بدأ فحص %s على %s على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق.'%(a[0],a[1]))
     if cmd in('/fullscan','/rescan'):
         import an
@@ -601,7 +606,7 @@ def handle(chat,text):
             an.audit(c,'fullscan_blocked',d,'not approved; passive only')
             send(chat,'🚫 %s مش معتمد، فمفيش فحص نشط. اعتمده بـ /approve %s (وبعدها أقر) وارجع اكتب %s %s.\nدلوقتي هعمل جمع معلومات عامة فقط:'%(d,d,cmd,d))
             return send(chat,an.passive(d))
-        e=an.dispatch('full',d); an.audit(db(),'fullscan_dispatch' if not e else 'fullscan_dispatch_failed',d,e or 'ok')
+        e=an.dispatch('full',d,job_user=chat); an.audit(db(),'fullscan_dispatch' if not e else 'fullscan_dispatch_failed',d,e or 'ok')
         return send(chat,e if e else '🚀 بدأ الفحص الشامل لـ %s على GitHub Actions (تقريبا 15 إلى 30 دقيقة). هبعتلك التقدم لكل مرحلة، والتقرير في الآخر. /status لمتابعة الحالة.'%d)
     if cmd=='/status':
         import an; return send(chat,an.runs_status())
@@ -763,14 +768,14 @@ def doc_handle(m):
             send(cid,'⏳ برفع الملف وأشغّل الأداة الحقيقية على GitHub Actions...')
             ref=an.gh_upload_file(data, d0.get('file_name') or 'file.bin')
             if not ref: send(cid,'تعذر رفع الملف لـ GitHub دلوقتي، جرب تاني بعد شوية.'); return
-            e=an.dispatch_files(tool_id, ref, d0.get('file_name') or 'file.bin'); send(cid, e or '🚀 بدأ التحليل على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق. /jobs للمتابعة.'); return
+            e=an.dispatch_files(tool_id, ref, d0.get('file_name') or 'file.bin', job_user=cid); send(cid, e or '🚀 بدأ التحليل على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق. /jobs للمتابعة.'); return
         if armed=='Sigma' and (d0.get('file_name') or '').lower().endswith(('.yml','.yaml')):
             AN.pop(cid,None); cap=2000000
             if len(data)>cap: send(cid,'الملف أكبر من الحد (%d ميجا) لأدوات الملفات.'%(cap//1000000)); return
             send(cid,'⏳ برفع الملف وأشغّل الأداة الحقيقية على GitHub Actions...')
             ref=an.gh_upload_file(data, d0.get('file_name') or 'file.bin')
             if not ref: send(cid,'تعذر رفع الملف لـ GitHub دلوقتي، جرب تاني بعد شوية.'); return
-            e=an.dispatch_files('sigma', ref, d0.get('file_name') or 'file.bin'); send(cid, e or '🚀 بدأ التحليل على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق. /jobs للمتابعة.'); return
+            e=an.dispatch_files('sigma', ref, d0.get('file_name') or 'file.bin', job_user=cid); send(cid, e or '🚀 بدأ التحليل على GitHub Actions. النتيجة هتوصلك هنا خلال دقايق. /jobs للمتابعة.'); return
         import imgx
         if imgx.kind(data): AN.pop(cid,None); return img_check(cid,m,data,'image/jpeg',True)
         fn=AN.pop(cid,'Ghidra'); send_rep(cid,fn,d0.get('file_name',''),an.RUN.get(fn,an.RUN['Ghidra'])[0](data,d0.get('file_name','')))

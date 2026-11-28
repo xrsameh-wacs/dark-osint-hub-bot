@@ -2,3 +2,5 @@
 *.db-shm
 .token
 exports/
+__pycache__/
+*.pyc

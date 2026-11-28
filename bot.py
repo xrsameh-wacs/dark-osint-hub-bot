@@ -343,7 +343,7 @@ SEC_TEXT={
 'help':'📖 شرح استخدام البوت\n🛡 Dark OSINT Hub منصة أدوات أمن سيبراني وتحليل معلومات، شغالة كلها من جوه تيليجرام.\n\n• القائمة الرئيسية فيها 12 قسم، وكل قسم مستقل وبيعرض أدواته بس.\n• أي أداة: اختارها من قسمها، والبوت هيطلب منك البيانات اللي محتاجها خطوة بخطوة.\n• الفحوص النشطة (scan وfullscan) بتشتغل بس على دومينات انت معتمدها بـ /approve أو مثبت ملكيتها بـ /verifydomain.\n• البوت ده لحساب المالك بس، وكل عملية بتتسجل في سجل المراجعة.\n• /help — النص الكامل لكل الأوامر.\n• /index — الفهرس المركزي للمكتبة.\n• القائمة الكلاسيكية بفئات الأدوات من الزر اللي تحت.'}
 SEC_ACT={
 'osint':[('🔎 النطاقات الفرعية',('tool','subfinder')),('🌍 بيانات IP العامة',('tool','Shodan')),('🔑 فحص باسورد مسرب',('tool','Have I Been Pwned')),('👤 بحث اسم مستخدم (Maigret)',('tool','Maigret')),('📚 فهرس المكتبة',('cmd','/index')),('🔎 بحث في المكتبة',('hint','🔎 البحث: اكتب /search وبعدها الكلمة.\nمثال: /search Adobe')),('🏢 حوادث جهة معينة',('hint','🏢 اكتب /company وبعدها اسم الشركة أو الجهة.\nمثال: /company LinkedIn'))],
-'web':[('🛡 فحص ترويسات فوري',('tool','OWASP ZAP')),('📊 حالة الفحوصات',('cmd','/status')),('🚀 طريقة فحص /scan',('hint','🚀 الاستخدام: /scan أداة دومين\nالأدوات: nuclei وzap وnikto وffuf وtestssl وhttpx.\nلازم الدومين يكون معتمد بـ /approve أو مثبت بـ /verifydomain. الفحص بيتنفذ على GitHub Actions والنتيجة بتيجي هنا.')),('🧪 طريقة الفحص الشامل',('hint','🧪 الاستخدام: /fullscan دومين\nفحص شامل متعدد المراحل لدومين معتمد، بياخد تقريباً 15-30 دقيقة، والتقدم بيوصلك مرحلة مرحلة. و/rescan دومين بيعيد الفحص وبيقارنه باللي قبله.')),('📝 اعتماد دومين',('hint','📝 الاستخدام: /approve دومين\nهتقر إنك تملك الدومين أو معاك تصريح كتابي بفحصه، وبعدين اكتب /approve دومين أقر للتأكيد. الإقرار بيتحفظ في سجل المراجعة.')),('🔐 إثبات ملكية دومين',('hint','🔐 الاستخدام: /verifydomain دومين\nالبوت هيديك سجل DNS TXT تضيفه عند مسجل الدومين، وبعد ما يظهر اكتب /verifydomain check دومين.')),('🧪 إدارة المختبر الدفاعي',('cmd','/lab'))],
+'web':[('🛡 فحص ترويسات فوري',('tool','OWASP ZAP')),('🛡 اختبار اختراق آلي',('cmd','/pentest')),('📊 حالة الفحوصات',('cmd','/status')),('🚀 طريقة فحص /scan',('hint','🚀 الاستخدام: /scan أداة دومين\nالأدوات: nuclei وzap وnikto وffuf وtestssl وhttpx.\nلازم الدومين يكون معتمد بـ /approve أو مثبت بـ /verifydomain. الفحص بيتنفذ على GitHub Actions والنتيجة بتيجي هنا.')),('🧪 طريقة الفحص الشامل',('hint','🧪 الاستخدام: /fullscan دومين\nفحص شامل متعدد المراحل لدومين معتمد، بياخد تقريباً 15-30 دقيقة، والتقدم بيوصلك مرحلة مرحلة. و/rescan دومين بيعيد الفحص وبيقارنه باللي قبله.')),('📝 اعتماد دومين',('hint','📝 الاستخدام: /approve دومين\nهتقر إنك تملك الدومين أو معاك تصريح كتابي بفحصه، وبعدين اكتب /approve دومين أقر للتأكيد. الإقرار بيتحفظ في سجل المراجعة.')),('🔐 إثبات ملكية دومين',('hint','🔐 الاستخدام: /verifydomain دومين\nالبوت هيديك سجل DNS TXT تضيفه عند مسجل الدومين، وبعد ما يظهر اكتب /verifydomain check دومين.')),('🧪 إدارة المختبر الدفاعي',('cmd','/lab'))],
 'net':[('🌍 بيانات IP العامة',('tool','Shodan')),('🦈 تحليل ملف PCAP',('tool','Wireshark')),('🚪 طريقة فحص Nmap',('hint','🚪 الاستخدام: /scan nmap دومين\nبيكشف أشهر 100 بورت ونسخ الخدمات على دومين معتمد.')),('🧭 طريقة Recon الشامل',('hint','🧭 الاستخدام: /scan recon دومين\nاستطلاع شامل لدومين معتمد: نطاقات فرعية وبورتات وشهادات وتقنيات ويب.')),('⚠️ بحث مؤشر IP',('hint','⚠️ الاستخدام: /ioc قيمة\nمثال: /ioc 1.2.3.4 أو /ioc CVE-2021-44228 أو /ioc دومين'))],
 'threat':[('🚨 آخر الحوادث',('cmd','/incidents 10')),('📡 المصادر',('cmd','/sources')),('🔄 تحديث البيانات',('cmd','/updates')),('🧬 مؤشرات التهديد',('tool','MISP')),('🛡 سمعة IP (AbuseIPDB)',('tool','AbuseIPDB')),('🧬 تقارير OTX',('tool','AlienVault OTX')),('🦠 سمعة VirusTotal',('tool','VirusTotal')),('🎯 تقنيات ATT&CK',('tool','MITRE ATT&CK Navigator')),('🕒 خط زمني',('hint','🕒 الاستخدام: /timeline سنة أو اسم\nمثال: /timeline 2023 أو /timeline Adobe'))],
 'cve':[('🐛 بحث برقم CVE',('tool','CISA KEV Catalog')),('🚨 الثغرات المستغلة والحوادث',('cmd','/incidents 10')),('🔎 بحث عام',('hint','🔎 البحث: اكتب /search وبعدها رقم الثغرة أو اسم المنتج.\nمثال: /search CVE-2021-44228'))],
@@ -368,6 +368,8 @@ HELP='''🛡 مكتبة أبحاث الأمن (بيانات وصفية من مص
 /verifydomain دومين — إثبات ملكية دومين (TXT)
 /scan أداة دومين — فحص نشط خفيف عبر GitHub Actions (لدومين مثبت فقط)
 /fullscan دومين — فحص شامل متعدد المراحل (لدومين معتمد)
+/pentest رابط — اختبار اختراق آلي كامل (استطلاع ← ثغرات ← تحقق ← تقرير CVSS)
+/pentest status | report رقم | evidence رقم | retest رقم — إدارة جلسات الفحص
 /rescan دومين — إعادة الفحص ومقارنته بالسابق
 /status — حالة الفحوصات
 /approve دومين — اعتماد هدف (إقرار ملكية/تصريح)
@@ -569,6 +571,232 @@ def ask_ai(chat,q):
     if not ans: return send(chat,'لم أستطع صياغة إجابة، أعد السؤال بشكل أوضح.')
     HIST.extend([{'role':'user','content':q},{'role':'assistant','content':ans[:1200]}]); del HIST[:-8]; hist_save()
     return send(chat,'🤖 '+ans)
+PENTEST_HELP=('🛡 اختبار اختراق آلي (Automated Web Pentest)\n\n'
+ '/pentest رابط — يبدأ جلسة فحص جديدة (لازم النطاق يكون معتمد بـ /approve أو مثبت بـ /verifydomain)\n'
+ '/pentest confirm رمز — تأكيد النطاق وبدء الفحص فعليًا\n'
+ '/pentest status — آخر الجلسات ونتيجتها\n'
+ '/pentest report رقم — إعادة إرسال تقرير جلسة\n'
+ '/pentest evidence رقم — ملف JSON كامل بالأدلة (أسرار محجوبة)\n'
+ '/pentest retest رقم — إعادة الفحص ومقارنة النتيجة بالإصلاح\n\n'
+ 'المراحل: استطلاع ← تقييم ثغرات ← تحقق عملي ← تحليل أثر (CVSS) ← تقرير.\n'
+ 'الثغرة لا تُحتسب إلا بعد إعادة تحقق فعلية. حسابات الاختبار تُقرأ من متغير البيئة '
+ 'PENTEST_ACCOUNTS_JSON (مش من الشات) وبتُستخدم في فحص IDOR والصلاحيات.')
+
+
+def pt_authorized(c, host):
+    """Return the approved domain that covers `host`, or None."""
+    import an
+    cands = [host] + ([host[4:]] if host.startswith('www.') else [])
+    for h in cands:
+        if c.execute('select 1 from authorized_domains where domain=?', (h,)).fetchone():
+            return h
+    for h in cands:
+        try:
+            if an.txt_ok(h):
+                return h
+        except Exception:
+            pass
+    return None
+
+
+def pt_options(full=False):
+    import pentest
+    opts = {'max_requests': int(os.environ.get('PENTEST_MAX_REQUESTS', '900')),
+            'rate': float(os.environ.get('PENTEST_RATE', '0.35')),
+            'max_pages': 35, 'max_depth': 2, 'online_recon': True,
+            'external_tools': False, 'allow_upload': bool(full),
+            'rate_limit_probe': bool(full), 'accounts': pentest.accounts_from_env(),
+            'allow_private': os.environ.get('PENTEST_ALLOW_PRIVATE') == '1'}
+    return opts
+
+
+def pt_store():
+    import pentest
+    c = db()
+    pentest.ensure_tables(c)
+    c.execute('create table if not exists pentest_consents(id integer primary key autoincrement, '
+              'chat text, target text, token text, ts text)')
+    c.commit()
+    return c
+
+
+def pt_send_report(chat, report, note=''):
+    import pentest
+    try:
+        rid = pentest.save_report(db(), report)
+    except Exception as e:
+        rid = None
+        print('pentest save err', type(e).__name__, flush=True)
+    head = ('✅ انتهى الفحص #%s — %s\n%s\n' % (rid, report['target'], note)) if rid else \
+        ('✅ انتهى الفحص — %s\n%s\n' % (report['target'], note))
+    chunks = pentest.chunk_text(head + pentest.render_telegram(report))
+    for chunk in chunks:
+        send(chat, chunk)
+    try:
+        md = pentest.render_markdown(report).encode()
+        call('sendDocument', {'chat_id': chat, 'caption': 'تقرير Markdown كامل — %s' % report['target']},
+             {'document': ('pentest-%s.md' % (rid or 'run'), md)})
+    except Exception as e:
+        print('pentest doc err', type(e).__name__, flush=True)
+    return rid
+
+
+def pt_run_inline(chat, target, scope_domains, options):
+    import pentest
+    port = int(urllib.parse.urlsplit(target).port or (443 if target.startswith('https') else 80))
+    scope = pentest.Scope(scope_domains, allow_private=bool(options.get('allow_private')),
+                          allow_ports=(port,))
+
+    def work():
+        try:
+            report = pentest.run_scan(target, options, scope=scope,
+                                      progress=lambda st: send(chat, '⏳ مرحلة: %s' % st))
+            pt_send_report(chat, report)
+        except Exception as e:
+            print('pentest inline err', type(e).__name__, flush=True)
+            send(chat, 'تعذر إكمال الفحص (%s). راجع /pentest status.' % type(e).__name__)
+    threading.Thread(target=work, daemon=True).start()
+
+
+def pt_start(chat, raw):
+    import pentest, an
+    target = pentest.canonical_target(raw)
+    host = pentest.domain_of(target)
+    if not host or not (re.fullmatch(an.DOM_RE, host) or re.fullmatch(r'\d+\.\d+\.\d+\.\d+', host)):
+        return send(chat, 'الاستخدام: /pentest https://example.com\nنطاق صالح فقط (أو IP مصرح به).')
+    c = pt_store()
+    if not pt_authorized(c, host):
+        an.audit(c, 'pentest_blocked', host, 'not authorized')
+        return send(chat, '🚫 %s مش معتمد. اعتمده الأول بـ /approve %s (إقرار ملكية/تصريح) '
+                          'أو أثبته بـ /verifydomain. مفيش فحص من غير تصريح.' % (host, host))
+    token = pentest.consent_token(SECRET, target, chat)
+    c.execute('insert into pentest_consents(chat,target,token,ts) values(?,?,?,?)',
+              (str(chat), target, token, now()))
+    c.commit()
+    an.audit(c, 'pentest_scope_requested', host, 'target=%s' % target)
+    accounts = pentest.accounts_from_env()
+    return send(chat,
+                '📋 تأكيد نطاق الفحص (صالح 30 دقيقة)\n\n'
+                'الهدف: %s\nالنطاق المصرح: %s\n'
+                'حد الطلبات: %d · المعدل: %s طلب/ثانية\n'
+                'حسابات اختبار للصلاحيات: %s\n\n'
+                'الفحص كشف فقط: مفيش شراء، مفيش حذف، مفيش تعديل بيانات. أي ثغرة لازم تتأكد بإعادة تحقق.\n'
+                'للتأكيد والبدء: /pentest confirm %s' %
+                (target, host, pt_options()['max_requests'], pt_options()['rate'],
+                 ('%d حساب' % len(accounts)) if accounts else 'مش مضبوطة (فحص IDOR هيتخطى)',
+                 token))
+
+
+def pt_confirm(chat, token):
+    import pentest, an
+    c = pt_store()
+    row = c.execute('select target from pentest_consents where chat=? and token=? order by id desc limit 1',
+                    (str(chat), token.strip())).fetchone()
+    if not row:
+        return send(chat, 'الرمز غير معروف. ابدأ من جديد بـ /pentest رابط.')
+    target = row[0]
+    host = pentest.domain_of(target)
+    if not pentest.consent_valid(SECRET, target, chat, token.strip()):
+        return send(chat, 'الرمز منتهي أو غير صالح. ابدأ من جديد بـ /pentest رابط.')
+    approved = pt_authorized(c, host)
+    if not approved:
+        return send(chat, 'الاعتماد اتسحب من %s — مفيش فحص.' % host)
+    an.audit(c, 'pentest_confirmed', host, 'target=%s scope=%s' % (target, approved))
+    options = pt_options()
+    err = pentest.dispatch_worker(target, [approved], chat_id=chat, options=options)
+    if err is None:
+        try:
+            an.job_open(chat, 'scan', 'pentest', host, 'pentest.yml')
+        except Exception:
+            pass
+        return send(chat, '🚀 الفحص بدأ على العامل المستقل (GitHub Actions): استطلاع وتقنيات وثغرات '
+                          'ومصادقة وصلاحيات وAPI وأدوات خارجية. التقرير هيتنفذ على مراحل وهتوصلك النتيجة هنا. '
+                          '/pentest status للمتابعة.')
+    if os.environ.get('PENTEST_INLINE') == '1':
+        send(chat, 'ℹ️ العامل المستقل غير متاح (%s) — هشغّل الفحص داخل البوت لأن PENTEST_INLINE=1.' % err)
+        pt_run_inline(chat, target, [approved], options)
+        return
+    return send(chat, '⚠️ العامل المستقل مش جاهز: %s\n\n'
+                      'ثبّت deploy/pentest.yml في ريبو osint-scanner وأضف SCAN_KEY وTELEGRAM_TOKEN '
+                      'وPENTEST_REPO_TOKEN، أو فعّل PENTEST_INLINE=1 للتشغيل داخل البوت (أثقل).\n'
+                      'لسه محفوظ اعتماد النطاق — مش هيتم أي طلب قبل ما العامل يشتغل.' % err)
+
+
+def pt_command(chat, arg):
+    import pentest
+    a = (arg or '').split()
+    if not a or a[0].lower() in ('help', '?', ''):
+        return send(chat, PENTEST_HELP)
+    sub = a[0].lower()
+    if sub == 'confirm' and len(a) > 1:
+        return pt_confirm(chat, a[1])
+    if sub == 'status':
+        c = pt_store()
+        rows = pentest.list_runs(c, 8)
+        if not rows:
+            return send(chat, 'مفيش جلسات فحص محفوظة.')
+        return send(chat, '📊 آخر جلسات الفحص:\n' + '\n'.join(
+            '• #%s %s — %s · %s · %s ثغرة (مؤكد %s) · CVSS أقصى %.1f'
+            % (r[0], r[1][:16], r[2], r[3], r[5], r[6], r[4]) for r in rows)) 
+    if sub == 'report' and len(a) > 1 and a[1].isdigit():
+        rep = pentest.load_report(pt_store(), int(a[1]))
+        if not rep:
+            return send(chat, 'مفيش تقرير بالرقم ده. شوف /pentest status.')
+        return pt_send_report(chat, rep, note='(إعادة إرسال)')
+    if sub == 'evidence' and len(a) > 1 and a[1].isdigit():
+        rep = pentest.load_report(pt_store(), int(a[1]))
+        if not rep:
+            return send(chat, 'مفيش تقرير بالرقم ده.')
+        payload = {'target': rep['target'], 'scope': rep['scope'], 'findings': rep['findings'],
+                   'recon': rep['recon'], 'notes': rep['notes']}
+        call('sendDocument', {'chat_id': chat,
+                              'caption': 'أدلة الفحص #%s — التوكنات وكلمات المرور محجوبة' % a[1]},
+             {'document': ('pentest-evidence-%s.json' % a[1],
+                           json.dumps(payload, ensure_ascii=False, indent=1).encode())})
+        return
+    if sub == 'retest' and len(a) > 1 and a[1].isdigit():
+        old = pentest.load_report(pt_store(), int(a[1]))
+        if not old:
+            return send(chat, 'مفيش تقرير بالرقم ده.')
+        host = pentest.domain_of(old['target'])
+        if not pt_authorized(pt_store(), host):
+            return send(chat, 'الاعتماد مش موجود حاليًا لـ %s — مفيش إعادة فحص.' % host)
+        if os.environ.get('PENTEST_INLINE') != '1':
+            err = pentest.dispatch_worker(old['target'], old['scope'], chat_id=chat, options=pt_options())
+            if err is None:
+                return send(chat, '🔁 إعادة الفحص بدأت على العامل. هقارنها بالتقرير #%s وأقولك إيه اللي اتصلح وإيه اللي لسه.' % a[1])
+            return send(chat, 'تعذر بدء إعادة الفحص: %s' % err)
+        send(chat, '🔁 إعادة الفحص داخل البوت... هقارنها بالتقرير #%s.' % a[1])
+        _pt_retest_inline(chat, old)
+        return
+    return pt_start(chat, arg)
+
+
+def _pt_retest_inline(chat, old):
+    import pentest
+    host = pentest.domain_of(old['target'])
+    port = int(urllib.parse.urlsplit(old['target']).port or (443 if old['target'].startswith('https') else 80))
+    scope = pentest.Scope(old.get('scope') or [host],
+                          allow_private=bool(pt_options().get('allow_private')), allow_ports=(port,))
+
+    def work():
+        try:
+            new = pentest.run_scan(old['target'], pt_options(), scope=scope)
+            diff = pentest.diff_reports(old, new)
+            pt_send_report(chat, new)
+            lines = ['🔁 نتيجة إعادة الفحص (مقارنة بالتقرير السابق)']
+            lines.append('✅ اتصلحت: %d' % len(diff['fixed']))
+            lines += ['  - %s %s' % (k[0], k[1]) for k in diff['fixed'][:10]]
+            lines.append('⚠️ لسه موجودة: %d' % len(diff['persisting']))
+            lines += ['  - %s %s' % (k[0], k[1]) for k in diff['persisting'][:10]]
+            lines.append('🆕 جديدة: %d' % len(diff['new']))
+            lines += ['  - %s %s' % (k[0], k[1]) for k in diff['new'][:10]]
+            send(chat, '\n'.join(lines))
+        except Exception as e:
+            send(chat, 'تعذر إكمال إعادة الفحص (%s).' % type(e).__name__)
+    threading.Thread(target=work, daemon=True).start()
+
+
 def handle(chat,text):
     c=db(); parts=text.strip().split(None,1); cmd=parts[0].split('@')[0].lower(); arg=parts[1].strip() if len(parts)>1 else ''
     if cmd=='/ask':
@@ -589,6 +817,8 @@ def handle(chat,text):
             r=an.txt_ok(d)
             return send(chat,'تعذر قراءة DNS دلوقتي، جرب بعد شوية.' if r is None else ('✅ تم إثبات ملكية %s. تقدر تستخدم /scan nmap|nuclei|zap|nikto %s'%(d,d) if r else '❌ سجل TXT لسه مش ظاهر. استنى كام دقيقة وجرب تاني.'))
         return send(chat,an.verify_text(d))
+    if cmd=='/pentest':
+        return pt_command(chat,arg)
     if cmd=='/jobs':
         import an
         return send(chat,an.jobs_status(user=chat))
